@@ -157,7 +157,7 @@ async function startSession(body: Record<string, unknown>) {
       .eq('status', 'published')
       .maybeSingle()
     const excluded = new Set(recentPuzzleIds)
-    if (currentAssignment?.answer_word_id) excluded.add(currentAssignment.answer_word_id)
+    const currentAnswerId = currentAssignment?.answer_word_id
 
     const { data: candidates, error } = await admin
       .from('wordle_words')
@@ -167,8 +167,8 @@ async function startSession(body: Record<string, unknown>) {
       .limit(1000)
 
     if (error) throw new RequestError('temporary_server_failure', error.message, 503)
-    const eligible = (candidates ?? []).filter((candidate) => !excluded.has(candidate.public_key))
-    const fallback = (candidates ?? []).filter((candidate) => candidate.id !== currentAssignment?.answer_word_id)
+    const eligible = (candidates ?? []).filter((candidate) => candidate.id !== currentAnswerId && !excluded.has(candidate.public_key))
+    const fallback = (candidates ?? []).filter((candidate) => candidate.id !== currentAnswerId)
     const pool = eligible.length > 0 ? eligible : fallback
     if (pool.length === 0) throw new RequestError('puzzle_unavailable', 'No practice puzzles are available.', 503)
     puzzleWordId = pool[Math.floor(Math.random() * pool.length)].id
