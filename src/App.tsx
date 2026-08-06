@@ -4,6 +4,7 @@ import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from '.
 import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
 import { GameServiceError, getLocalInitialSession, startGame, submitGuess as submitGuessToService } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
+import { createShareText } from './game/share'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
 
 const LETTERS = 'QWERTYUIOPASDFGHJKLZXCVBNM'.split('')
@@ -144,11 +145,7 @@ function App() {
   }
 
   async function shareResult() {
-    const grid = session.attempts
-      .map(({ result }) => result.map((state) => state === 'correct' ? '🟦' : state === 'present' ? '🟨' : '⬜').join(''))
-      .join('\n')
-    const label = mode === 'daily' ? `Dailies ${today}` : 'Dailies Unlimited'
-    const text = `${label} ${session.status === 'won' ? `${session.attempts.length}/6` : 'X/6'}\n\n${grid}`
+    const text = createShareText(session)
 
     try {
       await navigator.clipboard.writeText(text)

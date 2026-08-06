@@ -49,7 +49,7 @@ function createLocalSession(mode: GameMode, stats: Stats, date: string): GameSes
     }
   }
 
-  const puzzle = getUnlimitedAnswer(stats.recentUnlimitedPuzzleIds)
+  const puzzle = getUnlimitedAnswer(stats.recentUnlimitedPuzzleIds, getDailyAnswer(date))
   return {
     mode,
     puzzleId: puzzle.puzzleId,

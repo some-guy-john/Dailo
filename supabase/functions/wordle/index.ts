@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { errorResponse, json, readBody } from '../_shared/http.ts'
+import { corsHeaders, errorResponse, json, readBody } from '../_shared/http.ts'
 import { createSessionToken, hashToken, isUuid, londonDate } from '../_shared/wordle.ts'
 
 type SessionRow = {
@@ -227,7 +227,7 @@ async function submitGuess(body: Record<string, unknown>) {
 }
 
 async function handle(request: Request): Promise<Response> {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } })
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return errorResponse('method_not_allowed', 'Use POST for this endpoint.', 405)
 
   try {
