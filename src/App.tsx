@@ -1,52 +1,24 @@
 import { useEffect, useState } from 'react'
 import { formatLondonDate, getLondonDate } from './game/date'
-import { getDailyAnswer, getDailyPuzzleId, getUnlimitedAnswer } from './game/puzzles'
-import { isGuessFormatValid, isWinningResult, mergeKeyboardState, normalizeGuess, scoreGuess, MAX_GUESSES, WORD_LENGTH } from './game/rules'
-import { calculateCurrentStreak, calculateMaximumStreak } from './game/stats'
-import { loadSession, loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
+import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
+import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
+import { GameServiceError, getLocalInitialSession, startGame, submitGuess as submitGuessToService } from './game/service'
+import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
 
 const LETTERS = 'QWERTYUIOPASDFGHJKLZXCVBNM'.split('')
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
 
-function createSession(mode: GameMode, stats: Stats, date: string): GameSession {
-  if (mode === 'daily') {
-    return {
-      mode,
-      puzzleId: getDailyPuzzleId(date),
-      date,
-      answer: getDailyAnswer(date),
-      attempts: [],
-      status: 'active',
-      startedAt: new Date().toISOString(),
-    }
-  }
-
-  const puzzle = getUnlimitedAnswer(stats.recentUnlimitedPuzzleIds)
-  return {
-    mode,
-    puzzleId: puzzle.puzzleId,
-    date: null,
-    answer: puzzle.answer,
-    attempts: [],
-    status: 'active',
-    startedAt: new Date().toISOString(),
-  }
-}
-
-function getInitialSession(mode: GameMode, stats: Stats, date: string): GameSession {
-  const saved = loadSession(mode, mode === 'daily' ? date : null)
-  return saved ?? createSession(mode, stats, date)
-}
-
 function App() {
   const [today] = useState(getLondonDate)
   const [mode, setMode] = useState<GameMode>('daily')
   const [stats, setStats] = useState<Stats>(() => loadStats())
-  const [session, setSession] = useState<GameSession>(() => getInitialSession('daily', loadStats(), today))
+  const [session, setSession] = useState<GameSession>(() => getLocalInitialSession('daily', loadStats(), today))
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
   const [currentGuess, setCurrentGuess] = useState('')
   const [notice, setNotice] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [theme, setTheme] = useState(loadTheme)
   const [showStats, setShowStats] = useState(false)
   const [showTheme, setShowTheme] = useState(false)
@@ -54,7 +26,6 @@ function App() {
   const dailyResults = stats.dailyResults
   const currentStreak = calculateCurrentStreak(dailyResults, today)
   const maximumStreak = calculateMaximumStreak(dailyResults)
-  const completedDaily = Boolean(dailyResults[today])
   const modeLabel = mode === 'daily' ? 'Daily dispatch' : 'Unlimited practice'
   const modeDescription = mode === 'daily'
     ? `One shared puzzle · ${formatLondonDate(today)}`
@@ -74,10 +45,25 @@ function App() {
   }, [theme])
 
   useEffect(() => {
+    let cancelled = false
+    setIsLoading(true)
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
     setNotice('')
-    setSession(getInitialSession(mode, stats, today))
+
+    void startGame(mode, stats, today)
+      .then((nextSession) => {
+        if (cancelled) return
+        setSession(nextSession)
+        setIsLoading(false)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setIsLoading(false)
+        setNotice(error instanceof GameServiceError ? error.message : 'The game could not be loaded.')
+      })
+
+    return () => { cancelled = true }
   }, [mode, today])
 
   useEffect(() => {
@@ -105,52 +91,51 @@ function App() {
     setCurrentGuess((value) => value.slice(0, -1))
   }
 
-  function submitGuess() {
-    if (session.status !== 'active') return
-    const guess = normalizeGuess(currentGuess)
-    if (!isGuessFormatValid(guess)) {
-      setNotice(guess.length < WORD_LENGTH ? 'Not enough letters' : 'Use letters only')
-      return
+  async function submitGuess() {
+    if (session.status !== 'active' || isSubmitting || isLoading) return
+    setIsSubmitting(true)
+
+    try {
+      const nextSession = await submitGuessToService(session, currentGuess)
+      const lastAttempt = nextSession.attempts[nextSession.attempts.length - 1]
+      if (lastAttempt) setKeyboard((value) => mergeKeyboardState(value, lastAttempt.guess, lastAttempt.result))
+      setSession(nextSession)
+      setCurrentGuess('')
+
+      if (nextSession.status === 'won' || nextSession.status === 'lost') {
+        setStats((currentStats) => recordSession(currentStats, nextSession))
+        setNotice(nextSession.status === 'won'
+          ? `Solved in ${nextSession.attempts.length} ${nextSession.attempts.length === 1 ? 'guess' : 'guesses'}`
+          : nextSession.answer ? `The answer was ${nextSession.answer}` : 'Better luck next time')
+      } else {
+        setNotice('')
+      }
+    } catch (error: unknown) {
+      setNotice(error instanceof GameServiceError ? error.message : 'The guess could not be submitted.')
+    } finally {
+      setIsSubmitting(false)
     }
-
-    const result = scoreGuess(session.answer, guess)
-    const nextStatus = isWinningResult(result)
-      ? 'won'
-      : session.attempts.length + 1 >= MAX_GUESSES ? 'lost' : 'active'
-    const nextSession: GameSession = {
-      ...session,
-      attempts: [...session.attempts, { guess, result }],
-      status: nextStatus,
-      completedAt: nextStatus === 'active' ? undefined : new Date().toISOString(),
-    }
-
-    setKeyboard((value) => mergeKeyboardState(value, guess, result))
-    setSession(nextSession)
-    setCurrentGuess('')
-
-    if (nextStatus === 'won' || nextStatus === 'lost') {
-      const nextStats = recordResult(stats, nextSession)
-      setStats(nextStats)
-      setNotice(nextStatus === 'won'
-        ? `Solved in ${nextSession.attempts.length} ${nextSession.attempts.length === 1 ? 'guess' : 'guesses'}`
-        : `The answer was ${session.answer}`)
-    } else {
-      setNotice('')
-    }
-  }
-
-  function recordResult(currentStats: Stats, completedSession: GameSession): Stats {
-    const { recordSession } = statsModule
-    return recordSession(currentStats, completedSession)
   }
 
   function startUnlimited() {
-    const nextSession = createSession('unlimited', stats, today)
-    setMode('unlimited')
-    setSession(nextSession)
-    setKeyboard(EMPTY_KEYBOARD)
-    setCurrentGuess('')
+    if (mode !== 'unlimited') {
+      setMode('unlimited')
+      return
+    }
+
+    setIsLoading(true)
     setNotice('')
+    void startGame('unlimited', stats, today, true)
+      .then((nextSession) => {
+        setSession(nextSession)
+        setKeyboard(EMPTY_KEYBOARD)
+        setCurrentGuess('')
+        setIsLoading(false)
+      })
+      .catch((error: unknown) => {
+        setIsLoading(false)
+        setNotice(error instanceof GameServiceError ? error.message : 'The next puzzle could not be loaded.')
+      })
   }
 
   function switchMode(nextMode: GameMode) {
@@ -328,8 +313,5 @@ function App() {
 function Stat({ label, value }: { label: string; value: number }) {
   return <div className="modal-stat"><strong>{value}</strong><span>{label}</span></div>
 }
-
-// Kept outside the component so result recording stays easy to replace with a server response.
-import * as statsModule from './game/stats'
 
 export default App

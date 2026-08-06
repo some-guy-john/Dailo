@@ -3,6 +3,7 @@ import { EMPTY_STATS } from './stats'
 
 const statsKey = 'dailies:stats:v1'
 const themeKey = 'dailies:theme:v1'
+const browserIdKey = 'dailies:browser-id:v1'
 
 function read<T>(key: string): T | null {
   try {
@@ -48,4 +49,13 @@ export function loadTheme(): 'system' | 'light' | 'dark' {
 
 export function saveTheme(theme: 'system' | 'light' | 'dark'): void {
   write(themeKey, theme)
+}
+
+export function loadBrowserId(): string {
+  const existing = read<string>(browserIdKey)
+  if (existing) return existing
+
+  const generated = crypto.randomUUID()
+  write(browserIdKey, generated)
+  return generated
 }

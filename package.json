@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "validate:content": "node scripts/validate-wordle-content.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -15,7 +15,8 @@ export type GameSession = {
   mode: GameMode
   puzzleId: string
   date: string | null
-  answer: string
+  answer: string | null
+  sessionToken?: string
   attempts: Attempt[]
   status: GameStatus
   startedAt: string
