@@ -7,8 +7,9 @@
   --line: #dedbd3;
   --line-strong: #b8b3aa;
   --tile-empty: #fffdf8;
-  --key-bg: #e7e4dd;
+  --key-bg: #f0eee8;
   --key-text: #3b3a36;
+  --key-absent: #77746c;
   --correct: #88a487;
   --present: #d1aa68;
   --absent: #a2a09a;
@@ -33,8 +34,9 @@
     --line: #4a4843;
     --line-strong: #68655d;
     --tile-empty: #32312e;
-    --key-bg: #484640;
+    --key-bg: #514f4a;
     --key-text: #f5f2eb;
+    --key-absent: #252523;
     --correct: #8fae8d;
     --present: #d4ad6b;
     --absent: #696861;
@@ -57,8 +59,9 @@
   --line: #4a4843;
   --line-strong: #68655d;
   --tile-empty: #32312e;
-  --key-bg: #484640;
+  --key-bg: #514f4a;
   --key-text: #f5f2eb;
+  --key-absent: #252523;
   --correct: #8fae8d;
   --present: #d4ad6b;
   --absent: #696861;
@@ -391,7 +394,7 @@ button { font: inherit; color: inherit; }
 .key svg { width: 24px; height: 24px; }
 .key[data-state='correct'] { background: var(--correct); color: var(--on-tile); }
 .key[data-state='present'] { background: var(--present); color: var(--on-tile); }
-.key[data-state='absent'] { background: var(--absent); color: #fff; }
+.key[data-state='absent'] { background: var(--key-absent); color: #fff; }
 .key:not(:disabled):active { transform: translateY(2px); }
 .key:disabled { opacity: 0.5; cursor: default; }
 

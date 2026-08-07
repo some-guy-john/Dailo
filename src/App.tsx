@@ -532,7 +532,7 @@ function App() {
           <div className="hub">
             <div className="hub-date">
               <strong>{formatLondonDate(today)}</strong>
-              <span>New puzzles at midnight, London time</span>
+              <span>New puzzles at midnight</span>
             </div>
 
             <div className="game-list">
@@ -600,7 +600,7 @@ function App() {
                 {archivePuzzles.length === 0 ? (
                   <div className="archive-empty">
                     <strong>Your replay shelf is empty</strong>
-                    <span>Past daily editions will appear here after the next London midnight.</span>
+                    <span>Past daily editions will appear here after the next daily reset.</span>
                   </div>
                 ) : groupArchivePuzzles(archivePuzzles).map((group) => (
                   <div className="archive-month" key={group.label}>
@@ -632,10 +632,10 @@ function App() {
 
             <div className="play-identity">
               <div>
-                <span>{mode === 'daily' ? 'London daily edition' : mode === 'archive' ? 'Archived daily edition' : 'Unlimited practice deck'}</span>
+                <span>{mode === 'daily' ? 'Daily edition' : mode === 'archive' ? 'Archived daily edition' : 'Unlimited practice deck'}</span>
                 <strong>{mode === 'daily' ? formatLondonDate(today) : mode === 'archive' ? formatLondonDate(session.date ?? today) : 'Play at your own pace'}</strong>
               </div>
-              <b aria-hidden="true">{mode === 'daily' ? 'LON' : mode === 'archive' ? 'ARC' : '∞'}</b>
+              <b aria-hidden="true">{mode === 'daily' ? 'DAY' : mode === 'archive' ? 'ARC' : '∞'}</b>
             </div>
 
             <div className="board-area">
@@ -903,7 +903,7 @@ function App() {
             </ul>
             <div className="rule" />
             <p className="fine">
-              A new puzzle for everyone at midnight, London time. Unlimited never runs out and never touches your streak.
+              A new puzzle for everyone at midnight. Unlimited never runs out and never touches your streak.
             </p>
           </div>
         </div>
@@ -969,6 +969,13 @@ function App() {
               >
                 <i />
               </button>
+            </div>
+
+            <div className="setting-row">
+              <span className="setting-label">
+                <b>Daily reset</b>
+                <span>New puzzles arrive at midnight, London time</span>
+              </span>
             </div>
 
             <p className="fine" style={{ marginTop: 16 }}>Daily and Unlimited work without an account. Archive needs a confirmed email account.</p>

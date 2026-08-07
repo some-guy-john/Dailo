@@ -106,6 +106,33 @@ test.describe('protected Wordo play', () => {
   })
 
   test('opens the statistics dialog after solving', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action === 'start') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sessionToken: 'statistics-test-token',
+            state: { mode: 'daily', puzzleId: 'statistics-test-puzzle', date: '2026-08-08', status: 'active', attemptCount: 0, attempts: [], answer: null },
+          }),
+        })
+        return
+      }
+
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionToken: 'statistics-test-token',
+          result: {
+            status: 'won',
+            attemptCount: 1,
+            attempt: { guess: 'CRANE', result: ['correct', 'correct', 'correct', 'correct', 'correct'] },
+            answer: 'CRANE',
+          },
+        }),
+      })
+    })
+
     await page.goto('/')
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
     await page.keyboard.type('CRANE')
@@ -124,7 +151,7 @@ test.describe('protected Wordo play', () => {
     const dialog = page.getByRole('dialog', { name: 'How to play' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText('Guess the word in six tries.', { exact: false })).toBeVisible()
-    await expect(dialog.getByText('midnight, London time', { exact: false })).toBeVisible()
+    await expect(dialog.getByText('midnight', { exact: false })).toBeVisible()
   })
 
   test('lists the games behind the header icon', async ({ page }) => {
@@ -192,6 +219,55 @@ test.describe('protected Wordo play', () => {
     await page.getByRole('button', { name: 'High contrast colours' }).click()
 
     await expect(page.locator('.app')).toHaveAttribute('data-contrast', 'on')
+  })
+
+  test('darkens a keyboard letter after an absent result', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action === 'start') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sessionToken: 'keyboard-state-token',
+            state: { mode: 'daily', puzzleId: 'keyboard-state-puzzle', date: '2026-08-08', status: 'active', attemptCount: 0, attempts: [], answer: null },
+          }),
+        })
+        return
+      }
+
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionToken: 'keyboard-state-token',
+          result: {
+            status: 'active',
+            attemptCount: 1,
+            attempt: { guess: 'CRANE', result: ['absent', 'absent', 'absent', 'absent', 'absent'] },
+            answer: null,
+          },
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+    const unusedColour = await page.getByRole('button', { name: 'Q' }).evaluate((element) => getComputedStyle(element).backgroundColor)
+    await page.keyboard.type('CRANE')
+    await page.keyboard.press('Enter')
+    const absentKey = page.locator('.key[data-state="absent"]').first()
+    await expect(absentKey).toBeVisible()
+    await expect.poll(() => absentKey.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(unusedColour)
+  })
+
+  test('keeps timezone details in settings instead of the game board', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByText('Daily edition')).toBeVisible()
+    await expect(page.getByText('London daily edition')).toHaveCount(0)
+    await expect(page.getByText('LON', { exact: true })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Settings' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await expect(dialog.getByText('midnight, London time', { exact: false })).toBeVisible()
   })
 
   test('opens the account dialog with sign-in and account creation paths', async ({ page }) => {
