@@ -1,10 +1,10 @@
-# Dailies
+# Dailo
 
 ## Document Status
 
-This document defines the product and technical requirements for the first public release of **Dailies**.
+This document defines the product and technical requirements for the first public release of **Dailo**. The first game is **Wordo**; technical compatibility names such as `wordle_words` and the `wordle` Edge Function are intentionally retained in the backend.
 
-Release 1 is intentionally limited to a polished Wordle-style game with:
+Release 1 is intentionally limited to a polished five-letter word game with:
 
 - One shared daily puzzle
 - Curated unlimited puzzles
@@ -18,9 +18,23 @@ Accounts, archive play, multiplayer, crosswords, Connections, public profiles, l
 
 ## 1. Product Summary
 
-**Dailies** is a lightweight web platform for daily and replayable word and puzzle games.
+**Dailo** is a lightweight web platform for daily and replayable word and puzzle games.
 
-The first public release contains only a five-letter Wordle-style game. The product should feel complete and reliable on phones and desktop browsers before additional games or social features are considered.
+The first public release contains only the five-letter Wordo game. The product should feel complete and reliable on phones and desktop browsers before additional games or social features are considered.
+
+### Current Implementation
+
+The deployed Release 1 experience includes:
+
+- Dailo games hub and shared navigation shell
+- Wordo Daily and Wordo Unlimited modes
+- Protected Supabase sessions and server-authoritative guesses
+- London-time daily rollover handling
+- Browser-local stats, streaks, preferences, and refresh recovery
+- Responsive mobile and desktop layout with reduced-motion and high-contrast options
+- GitHub Pages deployment at `https://some-guy-john.github.io/Dailo/`
+
+The current content schedule contains 61 published daily assignments and 305 reviewed drafts through `2026-10-06`. Future content is published through the controlled scripts in `scripts/`, not from the public frontend.
 
 The priorities, in order, are:
 
@@ -40,8 +54,8 @@ The priorities, in order, are:
 
 Release 1 includes:
 
-- Daily Wordle
-- Unlimited Wordle
+- Daily Wordo
+- Wordo Unlimited
 - A shared game shell and navigation
 - On-screen and physical-keyboard input
 - Mobile and desktop layouts
@@ -114,7 +128,7 @@ Anonymous daily play can only be limited per browser installation or game sessio
 
 ### 3.4 Build for Current Requirements
 
-Wordle-specific logic and tables are acceptable.
+Wordo-specific logic and tables are acceptable.
 
 The project may share layout, theme, and navigation components, but it must not create a generic puzzle engine, generic crossword schema, or universal multiplayer system during Release 1.
 
@@ -179,7 +193,7 @@ A browser-installation identifier may be generated locally for continuity and ba
 
 ---
 
-## 5. Core Wordle Rules
+## 5. Core Wordo Rules
 
 ### 5.1 Puzzle Rules
 
@@ -196,7 +210,7 @@ A browser-installation identifier may be generated locally for continuity and ba
 
 ### 5.2 Repeated-Letter Scoring
 
-Scoring must follow the standard two-pass Wordle algorithm:
+Scoring must follow the standard two-pass Wordo algorithm:
 
 1. Mark exact-position matches.
 2. Count the unmatched letters remaining in the answer.
@@ -306,7 +320,7 @@ The answer and guessed words must not appear in the shared text.
 
 ---
 
-## 7. Unlimited Mode
+## 7. Wordo Unlimited Mode
 
 ### 7.1 Puzzle Selection
 
@@ -432,7 +446,7 @@ User-facing messages should be clear without exposing sensitive internals.
 
 ## 9. Data Model
 
-The exact SQL may evolve, but Release 1 should use clear Wordle-specific entities.
+The exact SQL may evolve, but Release 1 should use clear Wordo-specific entities. The current SQL names remain `wordle_*` for compatibility with the deployed database and function contract.
 
 ### 9.1 `wordle_words`
 
@@ -599,11 +613,12 @@ The workflow is:
 
 1. Prepare candidate words and daily assignments.
 2. Run automated validation.
-3. Review the proposed changes manually.
-4. Import them into the non-production environment.
-5. Test representative puzzles.
-6. Apply the approved migration or import to production.
-7. Export a backup after meaningful content changes.
+3. Run the read-only schedule review and resolve every `BLOCK` row or answer reuse warning.
+4. Review the proposed changes manually.
+5. Import them into the non-production environment.
+6. Test representative puzzles.
+7. Apply the approved migration or import to production.
+8. Export a backup after meaningful content changes.
 
 Validation must reject:
 
@@ -824,7 +839,7 @@ Release 1 does not require a third-party analytics platform.
 
 Deliver:
 
-- Pure Wordle scoring function
+- Pure Wordo scoring function
 - Comprehensive repeated-letter tests
 - Guess normalization and validation
 - Keyboard-state calculation
@@ -1008,7 +1023,7 @@ The following decisions do not block Release 1:
 - Whether anonymous history should be migrated into a future account
 - How future Versus scoring should work
 - Whether timed multiplayer should exist
-- Which game should follow Wordle
+- Which game should follow Wordo
 - Whether a graphical admin panel will ever be necessary
 
 These decisions should be made when their corresponding feature enters active planning.

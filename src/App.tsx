@@ -236,6 +236,9 @@ function App() {
   function startAnotherUnlimited() {
     setDialog(null)
     setIsLoading(true)
+    setSession(createEmptySession('unlimited', today))
+    setKeyboard(EMPTY_KEYBOARD)
+    setCurrentGuess('')
     setNotice('')
     setRevealRow(-1)
     void startGame('unlimited', stats, today, true)
@@ -277,6 +280,10 @@ function App() {
   }
 
   function retryLoad() {
+    if (mode === 'unlimited') {
+      startAnotherUnlimited()
+      return
+    }
     startRequestRef.current = null
     setReloadKey((value) => value + 1)
   }
@@ -314,6 +321,7 @@ function App() {
     >
       <header className="bar" data-size={screen === 'games' ? 'small' : 'normal'}>
         <div className="bar-left">
+          <span className="brand-stamp" aria-label="Dailo">D</span>
           <button className="icon-button" type="button" aria-label="All games" onClick={() => { setDialog(null); setScreen('games') }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <rect x="3.5" y="3.5" width="7" height="7" /><rect x="13.5" y="3.5" width="7" height="7" />
@@ -392,50 +400,60 @@ function App() {
         </section>
       ) : (
         <section className="screen" aria-label="Wordo game">
-          <nav className="mode-tabs" aria-label="Game mode">
-            <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
-            <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
-          </nav>
+            <nav className="mode-tabs" aria-label="Game mode">
+              <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
+              <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
+            </nav>
 
-          <div className="board-area">
-            <div
-              className="board"
-              data-ready={!isLoading && Boolean(session.sessionToken)}
-              aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}
-            >
-              {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
-                const attempt = session.attempts[rowIndex]
-                const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active'
-                return (
-                  <div
-                    className="board-row"
-                    data-invalid={invalidRow === rowIndex}
-                    aria-label={`Guess ${rowIndex + 1}`}
-                    key={rowIndex}
-                  >
-                    {Array.from({ length: WORD_LENGTH }).map((__, letterIndex) => {
-                      const letter = attempt?.guess[letterIndex] ?? (isCurrentRow ? currentGuess[letterIndex] ?? '' : '')
-                      const state = attempt?.result[letterIndex]
-                      const stateLabel = state ?? 'empty'
-                      return (
-                        <div
-                          className="tile"
-                          key={letterIndex}
-                          style={{ '--tile-index': letterIndex } as React.CSSProperties}
-                          data-state={state}
-                          data-filled={letter && !state ? 'true' : undefined}
-                          data-reveal={revealRow === rowIndex ? 'true' : undefined}
-                          aria-label={`${letter || 'empty'}, ${stateLabel}`}
-                        >
-                          {letter}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })}
+            <div className="play-identity">
+              <div>
+                <span>{mode === 'daily' ? 'London daily edition' : 'Unlimited practice deck'}</span>
+                <strong>{mode === 'daily' ? formatLondonDate(today) : 'Play at your own pace'}</strong>
+              </div>
+              <b aria-hidden="true">{mode === 'daily' ? 'LON' : '∞'}</b>
             </div>
-          </div>
+
+            <div className="board-area">
+              <div className="board-card">
+                <div
+                  className="board"
+                  data-ready={!isLoading && Boolean(session.sessionToken)}
+                  aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}
+                >
+                  {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
+                    const attempt = session.attempts[rowIndex]
+                    const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active'
+                    return (
+                      <div
+                        className="board-row"
+                        data-invalid={invalidRow === rowIndex}
+                        aria-label={`Guess ${rowIndex + 1}`}
+                        key={rowIndex}
+                      >
+                        {Array.from({ length: WORD_LENGTH }).map((__, letterIndex) => {
+                          const letter = attempt?.guess[letterIndex] ?? (isCurrentRow ? currentGuess[letterIndex] ?? '' : '')
+                          const state = attempt?.result[letterIndex]
+                          const stateLabel = state ?? 'empty'
+                          return (
+                            <div
+                              className="tile"
+                              key={letterIndex}
+                              style={{ '--tile-index': letterIndex } as React.CSSProperties}
+                              data-state={state}
+                              data-filled={letter && !state ? 'true' : undefined}
+                              data-reveal={revealRow === rowIndex ? 'true' : undefined}
+                              aria-label={`${letter || 'empty'}, ${stateLabel}`}
+                            >
+                              {letter}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
 
           {hasLoadError && (
             <div className="error-bar" role="alert">

@@ -49,6 +49,62 @@ test.describe('protected Wordo play', () => {
     await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['A', 'A', 'L', 'I', 'I'])
   })
 
+  test('continues with another unlimited puzzle after finishing one', async ({ page }) => {
+    let unlimitedStarts = 0
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string; mode?: string }
+
+      if (body.action === 'start') {
+        if (body.mode === 'daily') {
+          await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+              sessionToken: 'daily-test-token',
+              state: { mode: 'daily', puzzleId: 'daily-puzzle', date: '2026-08-07', status: 'active', attemptCount: 0, attempts: [], answer: null },
+            }),
+          })
+          return
+        }
+
+        unlimitedStarts += 1
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sessionToken: `unlimited-test-token-${unlimitedStarts}`,
+            state: { mode: 'unlimited', puzzleId: `unlimited-puzzle-${unlimitedStarts}`, date: null, status: 'active', attemptCount: 0, attempts: [], answer: null },
+          }),
+        })
+        return
+      }
+
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionToken: 'unlimited-test-token-1',
+          result: {
+            status: 'won',
+            attemptCount: 1,
+            attempt: { guess: 'CRANE', result: ['correct', 'correct', 'correct', 'correct', 'correct'] },
+            answer: 'CRANE',
+          },
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Unlimited' }).click()
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+
+    await page.keyboard.type('CRANE')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Statistics' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Next puzzle' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+    expect(unlimitedStarts).toBe(2)
+  })
+
   test('opens the statistics dialog after solving', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()

@@ -1,13 +1,13 @@
-# Supabase Release 1 Setup
+# Dailo / Wordo Supabase Setup
 
-Release 1 keeps answers behind the Supabase database and Edge Function. The public app must not ship the answer bank or the current answer in its JavaScript bundle.
+The Dailo Release 1 backend keeps Wordo answers behind the Supabase database and Edge Function. The public app must not ship the answer bank or the current answer in its JavaScript bundle.
 
 ## Local Setup
 
 1. Install the Supabase CLI.
 2. Create a development project.
 3. Apply the SQL migration in `migrations/`.
-4. Import reviewed content into `wordle_words`.
+4. Import reviewed Wordo content into `wordle_words`.
 5. Add published rows to `wordle_daily_assignments` using `Europe/London` calendar dates.
 6. Deploy `functions/wordle`.
 7. Configure the frontend with the public Supabase URL and anon key only.
