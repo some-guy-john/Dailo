@@ -623,7 +623,7 @@ function App() {
           </div>
         </section>
       ) : (
-        <section className="screen" aria-label="Wordo game">
+        <section className="screen play-screen" aria-label="Wordo game">
             <nav className="mode-tabs" aria-label="Game mode">
               <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
               <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
