@@ -597,14 +597,25 @@ function App() {
             {archiveError && <div className="error-bar" role="alert"><span>{archiveError}</span>{archiveAuthRequired ? <button type="button" onClick={openAccount}>Sign in</button> : <button type="button" onClick={openArchive}>Retry</button>}</div>}
             {!archiveLoading && !archiveError && (
               <div className="archive-list">
-                {archivePuzzles.map((puzzle) => (
-                  <button className="archive-row" type="button" key={puzzle.date} onClick={() => openArchivePuzzle(puzzle.date)}>
-                    <span className="archive-date">{formatLondonDate(puzzle.date)}</span>
-                    <span className="archive-state">
-                      {puzzle.status === 'won' ? 'Solved' : puzzle.status === 'lost' ? 'Finished' : puzzle.status === 'active' ? 'In progress' : 'Play'}
-                    </span>
-                    <span aria-hidden="true">→</span>
-                  </button>
+                {archivePuzzles.length === 0 ? (
+                  <div className="archive-empty">
+                    <strong>Your replay shelf is empty</strong>
+                    <span>Past daily editions will appear here after the next London midnight.</span>
+                  </div>
+                ) : groupArchivePuzzles(archivePuzzles).map((group) => (
+                  <div className="archive-month" key={group.label}>
+                    <h3>{group.label}</h3>
+                    {group.puzzles.map((puzzle) => (
+                      <button className="archive-row" data-state={puzzle.status ?? 'new'} type="button" key={puzzle.date} onClick={() => openArchivePuzzle(puzzle.date)}>
+                        <span className="archive-date">{formatLondonDate(puzzle.date)}</span>
+                        <span className="archive-state">
+                          <i />
+                          {puzzle.status === 'won' ? 'Solved' : puzzle.status === 'lost' ? 'Finished' : puzzle.status === 'active' ? 'In progress' : 'Play'}
+                        </span>
+                        <span aria-hidden="true">→</span>
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             )}
@@ -976,6 +987,17 @@ function countDistribution(stats: Stats): number[] {
     }
   })
   return buckets
+}
+
+function groupArchivePuzzles(puzzles: Awaited<ReturnType<typeof listArchivePuzzles>>) {
+  const groups: Array<{ label: string; puzzles: typeof puzzles }> = []
+  puzzles.forEach((puzzle) => {
+    const label = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', month: 'long', year: 'numeric' }).format(new Date(`${puzzle.date}T12:00:00Z`))
+    const existing = groups.find((group) => group.label === label)
+    if (existing) existing.puzzles.push(puzzle)
+    else groups.push({ label, puzzles: [puzzle] })
+  })
+  return groups
 }
 
 export default App
