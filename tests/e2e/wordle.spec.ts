@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test'
 
-test.describe('protected Wordle play', () => {
+test.describe('protected Wordo play', () => {
   test('loads the daily board without exposing the answer', async ({ page }) => {
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { name: 'Wordle' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Wordo' })).toBeVisible()
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
     await expect(page.locator('.board-row')).toHaveCount(6)
     await expect(page.locator('.tile')).toHaveCount(30)
-    await expect(page.locator('.result-tray')).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
   })
 
   test('submits a valid guess and restores it after refresh', async ({ page }) => {
@@ -18,8 +18,9 @@ test.describe('protected Wordle play', () => {
     await page.keyboard.press('Enter')
 
     const firstRow = page.locator('.board-row').first()
+    await expect(page.locator('.board')).toHaveAttribute('aria-label', '1 of 6 guesses used')
     await expect(firstRow.locator('.tile')).toHaveText(['A', 'A', 'L', 'I', 'I'])
-    await expect(firstRow.locator('[class*="tile-"]')).toHaveCount(5)
+    await expect(firstRow.locator('.tile[data-state]')).toHaveCount(5)
 
     await page.reload()
     await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['A', 'A', 'L', 'I', 'I'])
@@ -37,9 +38,9 @@ test.describe('protected Wordle play', () => {
 
   test('starts an unlimited protected session', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('button', { name: /Unlimited/ }).click()
+    await page.getByRole('button', { name: 'Unlimited' }).click()
 
-    await expect(page.getByText('Practice · no timer')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Unlimited' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
     await expect(page.locator('.board-row')).toHaveCount(6)
 
@@ -48,24 +49,50 @@ test.describe('protected Wordle play', () => {
     await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['A', 'A', 'L', 'I', 'I'])
   })
 
-  test('shows a result dialog after solving', async ({ page }) => {
+  test('opens the statistics dialog after solving', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
     await page.keyboard.type('CRANE')
     await page.keyboard.press('Enter')
 
-    const dialog = page.getByRole('dialog', { name: 'Solved.' })
+    const dialog = page.getByRole('dialog', { name: 'Statistics' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Share result' })).toBeVisible()
+    await expect(dialog.getByText('Solved in 1 guess.')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /Share/ })).toBeEnabled()
   })
 
   test('explains the rules without adding page clutter', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('button', { name: 'How to play' }).click()
 
-    await expect(page.getByRole('dialog', { name: 'Find the word in six.' })).toBeVisible()
-    await expect(page.getByText('Stats stay in this browser. No account is required.')).toBeVisible()
-    await expect(page.getByRole('dialog', { name: 'Find the word in six.' }).locator('.help-note strong')).toHaveText(/^\d{2}h \d{2}m$/)
+    const dialog = page.getByRole('dialog', { name: 'How to play' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText('Guess the word in six tries.', { exact: false })).toBeVisible()
+    await expect(dialog.getByText('midnight, London time', { exact: false })).toBeVisible()
+  })
+
+  test('lists the games behind the header icon', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Dailo' })).toBeVisible()
+    await expect(page.getByText('Wordo Unlimited')).toBeVisible()
+    await expect(page.getByText('Connections')).toBeVisible()
+  })
+
+  test('uses Dailo for the site and Wordo for the game', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Wordo' })).toBeVisible()
+    await page.getByRole('button', { name: 'All games' }).click()
+    await expect(page.getByRole('heading', { name: 'Dailo' })).toBeVisible()
+  })
+
+  test('switches the tiles to high contrast colours', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Settings' }).click()
+    await page.getByRole('button', { name: 'High contrast colours' }).click()
+
+    await expect(page.locator('.app')).toHaveAttribute('data-contrast', 'on')
   })
 
   test('fits the game on a narrow phone viewport', async ({ browser }) => {

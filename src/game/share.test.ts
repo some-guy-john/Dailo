@@ -18,9 +18,28 @@ describe('share text', () => {
     }
 
     const text = createShareText(session)
-    expect(text).toContain('Dailies 2026-08-07 1/6')
-    expect(text).toContain('⬜🟨⬜⬜🟦')
+    expect(text).toContain('Dailo Wordo 2026-08-07 1/6')
+    expect(text).toContain('⬜🟨⬜⬜🟩')
     expect(text).not.toContain('SLATE')
     expect(text).not.toContain('CRANE')
+  })
+
+  it('uses the high contrast squares when that preference is on', () => {
+    const session: GameSession = {
+      mode: 'unlimited',
+      puzzleId: 'unlimited-1',
+      date: null,
+      answer: 'CRANE',
+      attempts: [{
+        guess: 'SLATE',
+        result: ['absent', 'present', 'absent', 'absent', 'correct'],
+      }],
+      status: 'won',
+      startedAt: '2026-08-07T00:00:00.000Z',
+    }
+
+    const text = createShareText(session, true)
+    expect(text).toContain('Dailo Wordo Unlimited 1/6')
+    expect(text).toContain('⬜🟦⬜⬜🟧')
   })
 })

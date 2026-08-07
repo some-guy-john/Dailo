@@ -1,18 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatCountdown, formatLondonDate, getLondonDate, getMillisecondsUntilLondonMidnight } from './game/date'
 import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
-import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
+import {
+  DEFAULT_PREFERENCES,
+  loadPreferences,
+  loadStats,
+  loadTheme,
+  savePreferences,
+  saveSession,
+  saveStats,
+  saveTheme,
+} from './game/storage'
 import { createEmptySession, GameServiceError, startGame, submitGuess as submitGuessToService } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createShareText } from './game/share'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
 
-const LETTERS = 'QWERTYUIOPASDFGHJKLZXCVBNM'.split('')
+const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
+const PRAISE = ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew']
+
+type Screen = 'play' | 'games'
+type Dialog = 'stats' | 'help' | 'settings' | null
 
 function App() {
-  const [today] = useState(getLondonDate)
+  const [today, setToday] = useState(getLondonDate)
   const [mode, setMode] = useState<GameMode>('daily')
+  const [screen, setScreen] = useState<Screen>('play')
+  const [dialog, setDialog] = useState<Dialog>(null)
   const [stats, setStats] = useState<Stats>(() => loadStats())
   const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
@@ -21,36 +36,42 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [theme, setTheme] = useState(loadTheme)
-  const [showStats, setShowStats] = useState(false)
-  const [showTheme, setShowTheme] = useState(false)
-  const [showResult, setShowResult] = useState(false)
-  const [showHelp, setShowHelp] = useState(false)
+  const [preferences, setPreferences] = useState(() => (typeof window === 'undefined' ? DEFAULT_PREFERENCES : loadPreferences()))
+  const [invalidRow, setInvalidRow] = useState(-1)
+  const [revealRow, setRevealRow] = useState(-1)
+  const [dailyNeedsAdvance, setDailyNeedsAdvance] = useState(false)
   const [dailyCountdown, setDailyCountdown] = useState(() => formatCountdown(getMillisecondsUntilLondonMidnight()))
   const [reloadKey, setReloadKey] = useState(0)
+  const [shareLabel, setShareLabel] = useState('Share')
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
-  const resultRef = useRef<HTMLElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const noticeTimerRef = useRef<number | undefined>(undefined)
 
   const dailyResults = stats.dailyResults
   const currentStreak = calculateCurrentStreak(dailyResults, today)
   const maximumStreak = calculateMaximumStreak(dailyResults)
-  const modeLabel = mode === 'daily' ? 'Daily' : 'Unlimited'
-  const modeDescription = mode === 'daily'
-    ? `${formatLondonDate(today)} · London`
-    : 'Practice · no timer'
+  const dailyPlayed = Object.keys(dailyResults).length
+  const dailyWins = Object.values(dailyResults).filter((result) => result.won).length
+  const winPercentage = dailyPlayed === 0 ? 0 : Math.round((dailyWins / dailyPlayed) * 100)
+  const distribution = countDistribution(stats)
+  const bestBucket = Math.max(1, ...distribution)
+  const isFinished = session.status !== 'active'
+  const isBusy = isLoading || isSubmitting || !session.sessionToken
+  const hasLoadError = !isLoading && !session.sessionToken
 
   useEffect(() => {
     if (!session.sessionToken) return
     saveSession(session)
   }, [session])
 
-  useEffect(() => {
-    saveStats(stats)
-  }, [stats])
+  useEffect(() => { saveStats(stats) }, [stats])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme === 'system' ? '' : theme
     saveTheme(theme)
   }, [theme])
+
+  useEffect(() => { savePreferences(preferences) }, [preferences])
 
   useEffect(() => {
     const updateCountdown = () => setDailyCountdown(formatCountdown(getMillisecondsUntilLondonMidnight()))
@@ -60,14 +81,39 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const checkLondonDate = () => {
+      const nextDate = getLondonDate()
+      setToday((currentDate) => currentDate === nextDate ? currentDate : nextDate)
+    }
+    const interval = window.setInterval(checkLondonDate, 15_000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
     const requestKey = `${mode}:${today}:${reloadKey}`
+
+    const continuingPreviousDaily = mode === 'daily'
+      && session.mode === 'daily'
+      && session.status === 'active'
+      && session.date !== null
+      && session.date !== today
+      && session.attempts.length > 0
+
+    if (continuingPreviousDaily) {
+      setIsLoading(false)
+      setNotice('Finish yesterday’s puzzle before starting today’s.')
+      setDailyNeedsAdvance(true)
+      return () => { cancelled = true }
+    }
+
     setIsLoading(true)
+    setDailyNeedsAdvance(false)
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
     setNotice('')
+    setRevealRow(-1)
     setSession(createEmptySession(mode, today))
-    setShowResult(false)
 
     const request = startRequestRef.current?.key === requestKey
       ? startRequestRef.current.promise
@@ -79,8 +125,12 @@ function App() {
       .then((nextSession) => {
         if (cancelled) return
         setSession(nextSession)
-        setShowResult(nextSession.status !== 'active')
+        setKeyboard(nextSession.attempts.reduce(
+          (current, attempt) => mergeKeyboardState(current, attempt.guess, attempt.result),
+          EMPTY_KEYBOARD,
+        ))
         setIsLoading(false)
+        if (nextSession.status !== 'active') setDialog('stats')
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -93,14 +143,27 @@ function App() {
   }, [mode, today, reloadKey])
 
   useEffect(() => {
-    if (!showResult) return
-    resultRef.current?.focus()
-  }, [showResult])
+    if (!dialog) return
+    dialogRef.current?.focus()
+  }, [dialog])
+
+  useEffect(() => {
+    if (!notice) return
+    window.clearTimeout(noticeTimerRef.current)
+    noticeTimerRef.current = window.setTimeout(() => setNotice(''), 2000)
+    return () => window.clearTimeout(noticeTimerRef.current)
+  }, [notice])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && dialog) {
+        setDialog(null)
+        return
+      }
+      if (dialog || screen !== 'play' || event.metaKey || event.ctrlKey || event.altKey) return
+
       if (event.key === 'Enter') {
-        submitGuess()
+        void submitGuess()
       } else if (event.key === 'Backspace' || event.key === 'Delete') {
         removeLetter()
       } else if (/^[a-zA-Z]$/.test(event.key)) {
@@ -113,59 +176,74 @@ function App() {
   })
 
   function addLetter(letter: string) {
-    if (session.status !== 'active' || isLoading || !session.sessionToken || currentGuess.length >= WORD_LENGTH) return
+    if (session.status !== 'active' || isBusy || currentGuess.length >= WORD_LENGTH) return
     setCurrentGuess((value) => `${value}${letter.toUpperCase()}`)
   }
 
   function removeLetter() {
-    if (session.status !== 'active' || isLoading || !session.sessionToken) return
+    if (session.status !== 'active' || isBusy) return
     setCurrentGuess((value) => value.slice(0, -1))
   }
 
+  function rejectGuess(message: string) {
+    setNotice(message)
+    setInvalidRow(session.attempts.length)
+    window.setTimeout(() => setInvalidRow(-1), 600)
+  }
+
   async function submitGuess() {
-    if (session.status !== 'active' || isSubmitting || isLoading) return
+    if (session.status !== 'active' || isBusy) return
+    if (currentGuess.length < WORD_LENGTH) {
+      rejectGuess('Not enough letters')
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
       const nextSession = await submitGuessToService(session, currentGuess)
       const lastAttempt = nextSession.attempts[nextSession.attempts.length - 1]
       if (lastAttempt) setKeyboard((value) => mergeKeyboardState(value, lastAttempt.guess, lastAttempt.result))
+      setRevealRow(nextSession.attempts.length - 1)
       setSession(nextSession)
       saveSession(nextSession)
       setCurrentGuess('')
 
       if (nextSession.status === 'won' || nextSession.status === 'lost') {
-        setShowResult(true)
         setStats((currentStats) => recordSession(currentStats, nextSession))
         setNotice(nextSession.status === 'won'
-          ? `Solved in ${nextSession.attempts.length} ${nextSession.attempts.length === 1 ? 'guess' : 'guesses'}`
-          : nextSession.answer ? `The answer was ${nextSession.answer}` : 'Better luck next time')
+          ? PRAISE[Math.min(nextSession.attempts.length, PRAISE.length) - 1]
+          : nextSession.answer ?? 'Out of guesses')
+        window.setTimeout(() => setDialog('stats'), 1600)
       } else {
         setNotice('')
       }
     } catch (error: unknown) {
-      setNotice(error instanceof GameServiceError ? error.message : 'The guess could not be submitted.')
+      const message = error instanceof GameServiceError ? error.message : 'The guess could not be submitted.'
+      rejectGuess(message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  function startUnlimited() {
-    if (mode !== 'unlimited') {
-      setMode('unlimited')
-      return
-    }
+  function switchMode(nextMode: GameMode) {
+    if (nextMode === mode) return
+    setDialog(null)
+    setScreen('play')
+    setMode(nextMode)
+  }
 
+  function startAnotherUnlimited() {
+    setDialog(null)
     setIsLoading(true)
     setNotice('')
-    setShowResult(false)
+    setRevealRow(-1)
     void startGame('unlimited', stats, today, true)
       .then((nextSession) => {
         setSession(nextSession)
         saveSession(nextSession)
         setKeyboard(EMPTY_KEYBOARD)
         setCurrentGuess('')
-        setShowResult(false)
         setIsLoading(false)
       })
       .catch((error: unknown) => {
@@ -174,13 +252,8 @@ function App() {
       })
   }
 
-  function switchMode(nextMode: GameMode) {
-    if (nextMode === mode) return
-    setMode(nextMode)
-  }
-
   async function shareResult() {
-    const text = createShareText(session)
+    const text = createShareText(session, preferences.highContrast)
 
     try {
       if (navigator.clipboard?.writeText) {
@@ -196,10 +269,11 @@ function App() {
         if (!document.execCommand('copy')) throw new Error('copy_failed')
         textarea.remove()
       }
-      setNotice('Result copied to clipboard')
+      setShareLabel('Copied')
     } catch {
-      setNotice('Copy is unavailable in this browser')
+      setShareLabel('Copy unavailable')
     }
+    window.setTimeout(() => setShareLabel('Share'), 1600)
   }
 
   function retryLoad() {
@@ -207,70 +281,155 @@ function App() {
     setReloadKey((value) => value + 1)
   }
 
-  const isFinished = session.status !== 'active'
-  const isBusy = isLoading || isSubmitting || !session.sessionToken
-  const keyboardRows = [LETTERS.slice(0, 10), LETTERS.slice(10, 19), LETTERS.slice(19)]
-  const dailyWon = dailyResults[today]?.won
-  const hasLoadError = !isLoading && !session.sessionToken
-  const statusMessage = isLoading
-    ? 'Loading puzzle…'
-    : isSubmitting
-      ? 'Checking guess…'
-      : notice
+  function openGame(nextMode: GameMode) {
+    setScreen('play')
+    if (nextMode !== mode) {
+      setMode(nextMode)
+    } else if (nextMode === 'daily' && session.date !== today) {
+      setReloadKey((value) => value + 1)
+    }
+  }
+
+  function startToday() {
+    setDailyNeedsAdvance(false)
+    startRequestRef.current = null
+    setSession(createEmptySession('daily', today))
+    setReloadKey((value) => value + 1)
+  }
+
+  const statusMessage = isLoading ? 'Loading puzzle…' : isSubmitting ? 'Checking guess…' : notice
+  const verdict = !isFinished
+    ? ''
+    : session.status === 'won'
+      ? `Solved in ${session.attempts.length} ${session.attempts.length === 1 ? 'guess' : 'guesses'}.`
+      : session.answer
+        ? `The word was ${session.answer}.`
+        : 'Out of guesses.'
 
   return (
-    <div className="site-frame">
-      <header className="site-header">
-        <a className="wordmark" href="#top" aria-label="Dailies home">
-          <span className="wordmark-mark" aria-hidden="true">+</span>
-          <span>Dailies</span>
-        </a>
-          <div className="header-actions">
-          <button className="text-button" type="button" onClick={() => setShowHelp(true)}>How to play</button>
-          <button className="text-button" type="button" onClick={() => setShowStats(true)}>Stats</button>
-          <div className="theme-wrap">
-            <button className="icon-button" type="button" aria-label="Change appearance" onClick={() => setShowTheme((value) => !value)}>◐</button>
-            {showTheme && (
-              <div className="theme-menu" role="menu">
-                {(['system', 'light', 'dark'] as const).map((option) => (
-                  <button key={option} type="button" className={theme === option ? 'selected' : ''} onClick={() => { setTheme(option); setShowTheme(false) }}>
-                    {option[0].toUpperCase() + option.slice(1)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+    <div
+      className="app"
+      data-contrast={preferences.highContrast ? 'on' : 'off'}
+      data-motion={preferences.reduceMotion ? 'reduced' : 'normal'}
+    >
+      <header className="bar" data-size={screen === 'games' ? 'small' : 'normal'}>
+        <div className="bar-left">
+          <button className="icon-button" type="button" aria-label="All games" onClick={() => { setDialog(null); setScreen('games') }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="7" height="7" /><rect x="13.5" y="3.5" width="7" height="7" />
+              <rect x="3.5" y="13.5" width="7" height="7" /><rect x="13.5" y="13.5" width="7" height="7" />
+            </svg>
+          </button>
+          <button className="icon-button" type="button" aria-label="How to play" onClick={() => setDialog('help')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.2-2.6 3.9" />
+              <circle cx="12" cy="17.4" r="0.9" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+        </div>
+        <h1>{screen === 'games' ? 'Dailo' : 'Wordo'}</h1>
+        <div className="bar-right">
+          <button className="icon-button" type="button" aria-label="Statistics" onClick={() => setDialog('stats')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M4 20V4M4 7h11M4 12.5h15M4 18h8" />
+            </svg>
+          </button>
+          <button className="icon-button" type="button" aria-label="Settings" onClick={() => setDialog('settings')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
+            </svg>
+          </button>
         </div>
       </header>
 
-      <main id="top" className="main-layout">
-        <section className="game-panel" aria-label="Wordle game">
+      {screen === 'games' ? (
+        <section className="screen" aria-label="All games">
+          <div className="hub">
+            <div className="hub-date">
+              <strong>{formatLondonDate(today)}</strong>
+              <span>New puzzles at midnight, London time</span>
+            </div>
+
+            <div className="game-list">
+              <button className="game-row" type="button" onClick={() => openGame('daily')}>
+                <span className="game-thumb" aria-hidden="true">
+                  <i data-state="correct" /><i /><i /><i data-state="present" />
+                </span>
+                <span>
+                  <b>Wordo</b>
+                  <span className="game-note">Guess the word in six tries</span>
+                </span>
+                <span className="game-go">Play</span>
+              </button>
+
+              <button className="game-row" type="button" onClick={() => openGame('unlimited')}>
+                <span className="game-thumb" aria-hidden="true">
+                  <i /><i data-state="present" /><i data-state="correct" /><i />
+                </span>
+                <span>
+                  <b>Wordo Unlimited</b>
+                  <span className="game-note">Endless puzzles, no streak at stake</span>
+                </span>
+                <span className="game-go">Play</span>
+              </button>
+
+              <div className="game-row" data-locked="true">
+                <span className="game-thumb" aria-hidden="true"><i /><i /><i /><i /></span>
+                <span>
+                  <b>Connections</b>
+                  <span className="game-note">Group the words into four</span>
+                </span>
+                <span className="game-go">Soon</span>
+              </div>
+            </div>
+
+            <p className="hub-foot">
+              Current streak <b>{currentStreak}</b> · Next puzzle in <b>{dailyCountdown}</b>
+            </p>
+          </div>
+        </section>
+      ) : (
+        <section className="screen" aria-label="Wordo game">
           <nav className="mode-tabs" aria-label="Game mode">
-            <button type="button" className={mode === 'daily' ? 'active' : ''} onClick={() => switchMode('daily')}>
-              <span>01</span> Daily
-            </button>
-            <button type="button" className={mode === 'unlimited' ? 'active' : ''} onClick={() => switchMode('unlimited')}>
-              <span>∞</span> Unlimited
-            </button>
+            <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
+            <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
           </nav>
 
-          <div className="game-heading">
-            <h1 className="game-title">Wordle</h1>
-            <span className="date-stamp">{modeDescription}</span>
-          </div>
-
-          <div className="board-wrap">
-            <div className="board" data-ready={!isLoading && Boolean(session.sessionToken)} aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}>
+          <div className="board-area">
+            <div
+              className="board"
+              data-ready={!isLoading && Boolean(session.sessionToken)}
+              aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}
+            >
               {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
                 const attempt = session.attempts[rowIndex]
                 const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active'
                 return (
-                  <div className={`board-row ${isCurrentRow ? 'current-row' : ''}`} aria-label={`Guess ${rowIndex + 1}`} key={rowIndex}>
-                    {Array.from({ length: WORD_LENGTH }).map((_, letterIndex) => {
-                      const letter = attempt?.guess[letterIndex] ?? (isCurrentRow ? currentGuess[letterIndex] : '')
-                      const state = attempt?.result[letterIndex] ?? 'empty'
-                      const stateLabel = state === 'correct' ? 'correct' : state === 'present' ? 'present' : state === 'absent' ? 'absent' : 'empty'
-                      return <div className={`tile tile-${state} ${letter ? 'filled' : ''}`} aria-label={`${letter || 'empty'}, ${stateLabel}`} key={letterIndex}>{letter}</div>
+                  <div
+                    className="board-row"
+                    data-invalid={invalidRow === rowIndex}
+                    aria-label={`Guess ${rowIndex + 1}`}
+                    key={rowIndex}
+                  >
+                    {Array.from({ length: WORD_LENGTH }).map((__, letterIndex) => {
+                      const letter = attempt?.guess[letterIndex] ?? (isCurrentRow ? currentGuess[letterIndex] ?? '' : '')
+                      const state = attempt?.result[letterIndex]
+                      const stateLabel = state ?? 'empty'
+                      return (
+                        <div
+                          className="tile"
+                          key={letterIndex}
+                          style={{ '--tile-index': letterIndex } as React.CSSProperties}
+                          data-state={state}
+                          data-filled={letter && !state ? 'true' : undefined}
+                          data-reveal={revealRow === rowIndex ? 'true' : undefined}
+                          aria-label={`${letter || 'empty'}, ${stateLabel}`}
+                        >
+                          {letter}
+                        </div>
+                      )
                     })}
                   </div>
                 )
@@ -278,91 +437,246 @@ function App() {
             </div>
           </div>
 
-          <div className="game-status" aria-live="polite" role={hasLoadError ? 'alert' : undefined}>
-            <span>{statusMessage || '\u00a0'}</span>
-            {hasLoadError && <button className="retry-button" type="button" onClick={retryLoad}>Retry</button>}
-          </div>
+          {hasLoadError && (
+            <div className="error-bar" role="alert">
+              <span>{notice || 'The puzzle could not be loaded.'}</span>
+              <button type="button" onClick={retryLoad}>Retry</button>
+            </div>
+          )}
+
+          {dailyNeedsAdvance && (
+            <div className="rollover-bar" role="status">
+              <span>Yesterday’s puzzle is still in progress.</span>
+              <button type="button" onClick={startToday}>Start today</button>
+            </div>
+          )}
 
           <div className="keyboard" aria-label="On-screen keyboard">
-            {keyboardRows.map((row, rowIndex) => (
-              <div className="keyboard-row" key={rowIndex}>
-                {rowIndex === 2 && <button className="key key-wide" type="button" onClick={removeLetter} disabled={isBusy || isFinished} aria-label="Backspace">⌫</button>}
-                {row.map((letter) => <button key={letter} type="button" className={`key key-${keyboard[letter] ?? 'empty'}`} onClick={() => addLetter(letter)} disabled={isBusy || isFinished} aria-label={`${letter}${keyboard[letter] ? `, ${keyboard[letter]}` : ''}`}>{letter}</button>)}
-                {rowIndex === 2 && <button className="key key-wide key-enter" type="button" onClick={submitGuess} disabled={isBusy || isFinished}>Enter</button>}
+            {KEYBOARD_ROWS.map((row, rowIndex) => (
+              <div className="keyboard-row" data-indent={rowIndex === 1} key={rowIndex}>
+                {rowIndex === 2 && (
+                  <button className="key" data-wide="true" type="button" onClick={() => void submitGuess()} disabled={isBusy || isFinished}>
+                    Enter
+                  </button>
+                )}
+                {row.split('').map((letter) => (
+                  <button
+                    key={letter}
+                    type="button"
+                    className="key"
+                    data-state={keyboard[letter]}
+                    onClick={() => addLetter(letter)}
+                    disabled={isBusy || isFinished}
+                    aria-label={`${letter}${keyboard[letter] ? `, ${keyboard[letter]}` : ''}`}
+                  >
+                    {letter}
+                  </button>
+                ))}
+                {rowIndex === 2 && (
+                  <button className="key" data-wide="true" type="button" onClick={removeLetter} disabled={isBusy || isFinished} aria-label="Backspace">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                      <path d="M21 5.5H9.2L3 12l6.2 6.5H21z" /><path d="M12.5 9.5l5 5M17.5 9.5l-5 5" />
+                    </svg>
+                  </button>
+                )}
               </div>
             ))}
           </div>
-
-          {isFinished && !showResult && (
-            <button className="result-reopen" type="button" onClick={() => setShowResult(true)}>View result</button>
-          )}
         </section>
-      </main>
+      )}
 
-      {showResult && isFinished && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowResult(false)}>
-          <section className="result-modal" ref={resultRef} role="dialog" aria-modal="true" aria-labelledby="result-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-            <button className="modal-close" type="button" aria-label="Close result" onClick={() => setShowResult(false)}>×</button>
-            <p className="eyebrow">{mode === 'daily' ? 'Daily result' : 'Practice result'}</p>
-            <h2 id="result-title">{session.status === 'won' ? 'Solved.' : 'Not this time.'}</h2>
-            <p className="result-copy">
-              {session.status === 'won'
-                ? `You found it in ${session.attempts.length} ${session.attempts.length === 1 ? 'guess' : 'guesses'}.`
-                : <>The answer was <strong>{session.answer}</strong>.</>}
+      <div className="toast-wrap">
+        <p className="toast" data-show={Boolean(statusMessage) && !hasLoadError} role="status" aria-live="polite">
+          {statusMessage || ' '}
+        </p>
+      </div>
+
+      {dialog === 'stats' && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDialog(null)}>
+          <div
+            className="modal"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stats-title"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button className="icon-button modal-close" type="button" aria-label="Close statistics" onClick={() => setDialog(null)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <h2 id="stats-title">Statistics</h2>
+            {verdict && <p className="verdict">{verdict}</p>}
+
+            <div className="stat-row">
+              <div className="stat"><b>{dailyPlayed}</b><span>Played</span></div>
+              <div className="stat"><b>{winPercentage}</b><span>Win %</span></div>
+              <div className="stat"><b>{currentStreak}</b><span>Current streak</span></div>
+              <div className="stat"><b>{maximumStreak}</b><span>Max streak</span></div>
+            </div>
+
+            <h2>Guess distribution</h2>
+            <div className="dist">
+              {distribution.map((count, index) => (
+                <div className="dist-row" key={index}>
+                  <span>{index + 1}</span>
+                  <div
+                    className="dist-bar"
+                    data-best={count > 0 && count === bestBucket}
+                    style={{ width: `${Math.max(8, Math.round((count / bestBucket) * 100))}%` }}
+                  >
+                    {count}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="share-split">
+              <div className="next-in">
+                <span>Next Wordo</span>
+                <b>{dailyCountdown}</b>
+              </div>
+              <div className="share-rule" />
+              {mode === 'unlimited' && isFinished ? (
+                <button className="primary-button" type="button" onClick={startAnotherUnlimited}>Next puzzle</button>
+              ) : (
+                <button className="primary-button" type="button" onClick={() => void shareResult()} disabled={!isFinished}>
+                  {shareLabel}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 16V4M7.5 8.5L12 4l4.5 4.5" /><path d="M5 14v5.5h14V14" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <p className="fine" style={{ marginTop: 14 }}>Saved in this browser only. Clearing your data clears these.</p>
+          </div>
+        </div>
+      )}
+
+      {dialog === 'help' && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDialog(null)}>
+          <div
+            className="modal"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="help-title"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button className="icon-button modal-close" type="button" aria-label="Close how to play" onClick={() => setDialog(null)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <h2 id="help-title">How to play</h2>
+            <p style={{ marginTop: 0 }}>
+              Guess the word in six tries. Each guess must be a real five-letter word. The colours show how close you were.
             </p>
-            <div className="result-actions">
-              <button className="outline-button" type="button" onClick={shareResult}>Share result</button>
-              {mode === 'unlimited' && <button className="solid-button" type="button" onClick={startUnlimited}>Next puzzle <span>→</span></button>}
-              {mode === 'daily' && dailyWon && <span className="next-note">Back tomorrow</span>}
-            </div>
-          </section>
+            <ul className="examples">
+              <li>
+                <div className="example-row" aria-hidden="true">
+                  <i data-state="correct">W</i><i>E</i><i>A</i><i>R</i><i>Y</i>
+                </div>
+                <strong>W</strong> is in the word and in the right spot.
+              </li>
+              <li>
+                <div className="example-row" aria-hidden="true">
+                  <i>P</i><i data-state="present">I</i><i>L</i><i>L</i><i>S</i>
+                </div>
+                <strong>I</strong> is in the word but in the wrong spot.
+              </li>
+              <li>
+                <div className="example-row" aria-hidden="true">
+                  <i>V</i><i>A</i><i>G</i><i data-state="absent">U</i><i>E</i>
+                </div>
+                <strong>U</strong> is not in the word at all.
+              </li>
+            </ul>
+            <div className="rule" />
+            <p className="fine">
+              A new puzzle for everyone at midnight, London time. Unlimited never runs out and never touches your streak.
+            </p>
+          </div>
         </div>
       )}
 
-      {showHelp && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowHelp(false)}>
-          <section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(event) => event.stopPropagation()}>
-            <button className="modal-close" type="button" aria-label="Close how to play" onClick={() => setShowHelp(false)}>×</button>
-            <p className="eyebrow">Quick guide</p>
-            <h2 id="help-title">Find the word in six.</h2>
-            <div className="help-list">
-              <p><strong>Green</strong> means the letter is correct and in the right place.</p>
-              <p><strong>Yellow</strong> means the letter belongs somewhere else.</p>
-              <p><strong>Grey</strong> means it is not in the word.</p>
-            </div>
-            <div className="help-note">
-              <span>Daily resets in</span>
-              <strong aria-label={`${dailyCountdown} until the next daily`}>{dailyCountdown}</strong>
-              <span>Europe / London · midnight local time</span>
-              <span>Stats stay in this browser. No account is required.</span>
-            </div>
-          </section>
-        </div>
-      )}
+      {dialog === 'settings' && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDialog(null)}>
+          <div
+            className="modal"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button className="icon-button modal-close" type="button" aria-label="Close settings" onClick={() => setDialog(null)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <h2 id="settings-title">Settings</h2>
 
-      {showStats && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowStats(false)}>
-          <section className="stats-modal" role="dialog" aria-modal="true" aria-labelledby="stats-title" onMouseDown={(event) => event.stopPropagation()}>
-            <button className="modal-close" type="button" aria-label="Close statistics" onClick={() => setShowStats(false)}>×</button>
-            <p className="eyebrow">Your record</p>
-            <h2 id="stats-title">A little consistency<br />goes a long way.</h2>
-            <div className="stats-grid">
-              <Stat label="Current streak" value={currentStreak} />
-              <Stat label="Daily played" value={Object.keys(stats.dailyResults).length} />
-              <Stat label="Daily wins" value={Object.values(stats.dailyResults).filter((result) => result.won).length} />
-              <Stat label="Best streak" value={maximumStreak} />
-              <Stat label="Practice wins" value={stats.unlimitedResults.filter((result) => result.won).length} />
+            <div className="setting-row">
+              <span className="setting-label">
+                <b>Theme</b>
+                <span>Auto follows your device</span>
+              </span>
+              <div className="segmented" role="group" aria-label="Theme">
+                {(['system', 'light', 'dark'] as const).map((option) => (
+                  <button key={option} type="button" aria-pressed={theme === option} onClick={() => setTheme(option)}>
+                    {option === 'system' ? 'Auto' : option[0].toUpperCase() + option.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="modal-footnote">Statistics are stored locally in this browser.</p>
-          </section>
+
+            <div className="setting-row">
+              <span className="setting-label">
+                <b>High contrast colours</b>
+                <span>Orange and blue instead of green and yellow</span>
+              </span>
+              <button
+                className="switch"
+                type="button"
+                aria-pressed={preferences.highContrast}
+                aria-label="High contrast colours"
+                onClick={() => setPreferences((value) => ({ ...value, highContrast: !value.highContrast }))}
+              >
+                <i />
+              </button>
+            </div>
+
+            <div className="setting-row">
+              <span className="setting-label">
+                <b>Reduce motion</b>
+                <span>No tile flips</span>
+              </span>
+              <button
+                className="switch"
+                type="button"
+                aria-pressed={preferences.reduceMotion}
+                aria-label="Reduce motion"
+                onClick={() => setPreferences((value) => ({ ...value, reduceMotion: !value.reduceMotion }))}
+              >
+                <i />
+              </button>
+            </div>
+
+            <p className="fine" style={{ marginTop: 16 }}>No account, no email. Everything is stored on this device.</p>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
-  return <div className="modal-stat"><strong>{value}</strong><span>{label}</span></div>
+function countDistribution(stats: Stats): number[] {
+  const buckets = Array.from({ length: MAX_GUESSES }, () => 0)
+  Object.values(stats.dailyResults).forEach((result) => {
+    if (result.won && result.guesses >= 1 && result.guesses <= MAX_GUESSES) {
+      buckets[result.guesses - 1] += 1
+    }
+  })
+  return buckets
 }
 
 export default App

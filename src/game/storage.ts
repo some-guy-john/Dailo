@@ -3,7 +3,15 @@ import { EMPTY_STATS } from './stats'
 
 const statsKey = 'dailies:stats:v1'
 const themeKey = 'dailies:theme:v1'
+const prefsKey = 'dailies:prefs:v1'
 const browserIdKey = 'dailies:browser-id:v1'
+
+export type Preferences = {
+  highContrast: boolean
+  reduceMotion: boolean
+}
+
+export const DEFAULT_PREFERENCES: Preferences = { highContrast: false, reduceMotion: false }
 
 function read<T>(key: string): T | null {
   try {
@@ -49,6 +57,18 @@ export function loadTheme(): 'system' | 'light' | 'dark' {
 
 export function saveTheme(theme: 'system' | 'light' | 'dark'): void {
   write(themeKey, theme)
+}
+
+export function loadPreferences(): Preferences {
+  const stored = read<Partial<Preferences>>(prefsKey)
+  return {
+    highContrast: stored?.highContrast === true,
+    reduceMotion: stored?.reduceMotion === true,
+  }
+}
+
+export function savePreferences(preferences: Preferences): void {
+  write(prefsKey, preferences)
 }
 
 export function loadBrowserId(): string {
