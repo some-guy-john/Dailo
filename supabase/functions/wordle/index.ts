@@ -344,6 +344,30 @@ async function listArchive(body: Record<string, unknown>, request: Request) {
   }
 }
 
+async function archiveStats(request: Request) {
+  const authUser = await requireConfirmedUser(request)
+  const { data: sessions, error } = await admin
+    .from('wordle_game_sessions')
+    .select('status, attempt_count')
+    .eq('auth_user_id', authUser.id)
+    .eq('mode', 'archive')
+    .in('status', ['won', 'lost'])
+    .limit(1000)
+
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+
+  const distribution = Array.from({ length: 6 }, () => 0)
+  let wins = 0
+  for (const session of sessions ?? []) {
+    if (session.status === 'won') {
+      wins += 1
+      if (session.attempt_count >= 1 && session.attempt_count <= 6) distribution[session.attempt_count - 1] += 1
+    }
+  }
+
+  return { archiveStats: { played: sessions?.length ?? 0, wins, distribution } }
+}
+
 async function handle(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return errorResponse('method_not_allowed', 'Use POST for this endpoint.', 405)
@@ -353,6 +377,7 @@ async function handle(request: Request): Promise<Response> {
     const action = body.action
     if (action === 'start') return json(await startSession(body, request))
     if (action === 'archive-list') return json(await listArchive(body, request))
+    if (action === 'archive-stats') return json(await archiveStats(request))
     if (action === 'guess') return json(await submitGuess(body, request))
     throw new RequestError('invalid_action', 'The requested action is invalid.', 400)
   } catch (error) {

@@ -23,6 +23,7 @@ type BackendResponse = {
     answer: string | null
   }
   archives?: ArchivePuzzle[]
+  archiveStats?: ArchiveStats
   error?: { code: string; message: string }
 }
 
@@ -30,6 +31,12 @@ export type ArchivePuzzle = {
   date: string
   puzzleId: string
   status: 'active' | 'won' | 'lost' | null
+}
+
+export type ArchiveStats = {
+  played: number
+  wins: number
+  distribution: number[]
 }
 
 export const isProtectedBackendConfigured = Boolean(
@@ -125,6 +132,15 @@ export async function listArchivePuzzles(): Promise<ArchivePuzzle[]> {
 
   const response = await callBackend({ action: 'archive-list', browserId: loadBrowserId() })
   return response.archives ?? []
+}
+
+export async function getArchiveStats(): Promise<ArchiveStats> {
+  if (!isProtectedBackendConfigured) {
+    throw new GameServiceError('configuration_missing', 'Connect Supabase before loading Archive statistics.')
+  }
+
+  const response = await callBackend({ action: 'archive-stats' })
+  return response.archiveStats ?? { played: 0, wins: 0, distribution: [] }
 }
 
 export async function submitGuess(session: GameSession, rawGuess: string): Promise<GameSession> {

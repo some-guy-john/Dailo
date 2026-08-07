@@ -11,7 +11,8 @@ import {
   saveStats,
   saveTheme,
 } from './game/storage'
-import { createEmptySession, GameServiceError, listArchivePuzzles, startGame, submitGuess as submitGuessToService } from './game/service'
+import { createEmptySession, GameServiceError, getArchiveStats, listArchivePuzzles, startGame, submitGuess as submitGuessToService } from './game/service'
+import type { ArchiveStats } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createShareText } from './game/share'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
@@ -35,6 +36,8 @@ function App() {
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState('')
   const [archiveAuthRequired, setArchiveAuthRequired] = useState(false)
+  const [archiveStats, setArchiveStats] = useState<ArchiveStats>({ played: 0, wins: 0, distribution: [] })
+  const [archiveStatsLoaded, setArchiveStatsLoaded] = useState(false)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [user, setUser] = useState<User | null>(null)
   const [authMode, setAuthMode] = useState<AuthMode>('signin')
@@ -77,6 +80,8 @@ function App() {
   const archivePlayed = stats.archiveResults.length
   const archiveWins = stats.archiveResults.filter((result) => result.won).length
   const archiveWinPercentage = archivePlayed === 0 ? 0 : Math.round((archiveWins / archivePlayed) * 100)
+  const displayedArchivePlayed = archiveStatsLoaded ? archiveStats.played : archivePlayed
+  const displayedArchiveWins = archiveStatsLoaded ? archiveStats.wins : archiveWins
 
   useEffect(() => {
     if (!session.sessionToken) return
@@ -128,6 +133,24 @@ function App() {
       })
     return () => { cancelled = true }
   }, [screen, user?.id])
+
+  useEffect(() => {
+    if (!user) {
+      setArchiveStatsLoaded(false)
+      return
+    }
+    let cancelled = false
+    void getArchiveStats()
+      .then((nextStats) => {
+        if (cancelled) return
+        setArchiveStats(nextStats)
+        setArchiveStatsLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) setArchiveStatsLoaded(false)
+      })
+    return () => { cancelled = true }
+  }, [user?.id])
 
   useEffect(() => {
     if (!supabase) return
@@ -274,6 +297,12 @@ function App() {
 
       if (nextSession.status === 'won' || nextSession.status === 'lost') {
         setStats((currentStats) => recordSession(currentStats, nextSession))
+        if (nextSession.mode === 'archive' && user) {
+          void getArchiveStats().then((nextStats) => {
+            setArchiveStats(nextStats)
+            setArchiveStatsLoaded(true)
+          }).catch(() => {})
+        }
         setNotice(nextSession.status === 'won'
           ? PRAISE[Math.min(nextSession.attempts.length, PRAISE.length) - 1]
           : nextSession.answer ?? 'Out of guesses')
@@ -773,8 +802,8 @@ function App() {
             {verdict && <p className="verdict">{verdict}</p>}
 
             <div className="stat-row">
-              <div className="stat"><b>{mode === 'archive' ? archivePlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>
-              <div className="stat"><b>{mode === 'archive' ? archiveWinPercentage : winPercentage}</b><span>Win %</span></div>
+              <div className="stat"><b>{mode === 'archive' ? displayedArchivePlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>
+              <div className="stat"><b>{mode === 'archive' ? (displayedArchivePlayed === 0 ? 0 : Math.round((displayedArchiveWins / displayedArchivePlayed) * 100)) : winPercentage}</b><span>Win %</span></div>
               <div className="stat"><b>{mode === 'archive' ? '—' : currentStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Current streak'}</span></div>
               <div className="stat"><b>{mode === 'archive' ? '—' : maximumStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Max streak'}</span></div>
             </div>

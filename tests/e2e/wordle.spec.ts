@@ -147,6 +147,14 @@ test.describe('protected Wordo play', () => {
         return
       }
 
+      if (body.action === 'archive-stats') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ archiveStats: { played: 4, wins: 3, distribution: [1, 1, 1, 0, 0, 0] } }),
+        })
+        return
+      }
+
       if (body.action === 'start' && body.mode === 'archive') {
         await route.fulfill({
           contentType: 'application/json',
