@@ -687,3 +687,21 @@ button { font: inherit; color: inherit; }
   .archive-browser { padding: 20px 16px 30px; }
   .archive-row { padding: 13px 0; }
 }
+
+@media (min-width: 501px) and (max-height: 820px) {
+  .play-screen .mode-tabs { padding-top: 6px; padding-bottom: 2px; }
+  .play-screen .play-identity { padding-top: 5px; padding-bottom: 5px; }
+  .play-screen .board-area { padding-top: 8px; padding-bottom: 16px; }
+  .play-screen .board-card { width: min(calc(100vw - 20px), 322px); padding: 12px; }
+  .play-screen .keyboard { gap: 6px; padding-bottom: 12px; }
+  .play-screen .key { height: 50px; }
+}
+
+@media (max-width: 500px) and (max-height: 740px) {
+  .play-screen .mode-tabs { padding-top: 6px; padding-bottom: 2px; }
+  .play-screen .play-identity { padding-top: 5px; padding-bottom: 5px; }
+  .play-screen .board-area { padding-top: 6px; padding-bottom: 12px; }
+  .play-screen .board-card { width: calc(100vw - 44px); padding: 12px; }
+  .play-screen .keyboard { gap: 6px; padding-bottom: 12px; }
+  .play-screen .key { height: 48px; }
+}
