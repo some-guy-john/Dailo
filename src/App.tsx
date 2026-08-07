@@ -514,16 +514,7 @@ function App() {
             </svg>
           </button>
         </div>
-        <div className="bar-center">
-          <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
-          {screen === 'play' && (
-            <nav className="mode-tabs" aria-label="Game mode">
-              <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
-              <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
-              {mode === 'archive' && <button type="button" aria-pressed="true" onClick={openArchive}>Archive</button>}
-            </nav>
-          )}
-        </div>
+        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
         <div className="bar-right">
           <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -642,13 +633,11 @@ function App() {
         </section>
       ) : (
         <section className="screen play-screen" aria-label="Wordo game">
-          <div className="play-identity">
-              <div>
-                <span>{mode === 'daily' ? 'Daily edition' : mode === 'archive' ? 'Archived daily edition' : 'Unlimited practice deck'}</span>
-                <strong>{mode === 'daily' ? formatLondonDate(today) : mode === 'archive' ? formatLondonDate(session.date ?? today) : 'Play at your own pace'}</strong>
-              </div>
-              <b aria-hidden="true">{mode === 'daily' ? 'DAY' : mode === 'archive' ? 'ARC' : '∞'}</b>
-            </div>
+          <nav className="mode-tabs" aria-label="Game mode">
+            <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
+            <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
+            {mode === 'archive' && <button type="button" aria-pressed="true" onClick={openArchive}>Archive</button>}
+          </nav>
 
             <div className="board-area">
               <div className="board-card">

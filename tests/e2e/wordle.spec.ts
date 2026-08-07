@@ -241,7 +241,8 @@ test.describe('protected Wordo play', () => {
     await page.getByRole('button', { name: /Thu 6 Aug/ }).click()
     await expect(page.getByRole('heading', { name: 'Wordo' })).toBeVisible()
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
-    await expect(page.getByText('Archived daily edition')).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Game mode' })).toBeVisible()
+    await expect(page.getByText('Archived daily edition')).toHaveCount(0)
   })
 
   test('uses Dailo for the site and Wordo for the game', async ({ page }) => {
@@ -299,7 +300,8 @@ test.describe('protected Wordo play', () => {
 
   test('keeps timezone details in settings instead of the game board', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText('Daily edition')).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Game mode' })).toBeVisible()
+    await expect(page.getByText('Daily edition')).toHaveCount(0)
     await expect(page.getByText('London daily edition')).toHaveCount(0)
     await expect(page.getByText('LON', { exact: true })).toHaveCount(0)
 

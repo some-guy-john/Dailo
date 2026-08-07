@@ -120,8 +120,6 @@ button { font: inherit; color: inherit; }
   background: var(--surface);
   flex: none;
 }
-.bar[data-screen='play'] { height: 92px; }
-.bar-center { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 
 .bar-left, .bar-right { min-width: 0; display: flex; align-items: center; gap: 2px; }
 .bar-right { justify-content: flex-end; }
@@ -286,9 +284,8 @@ button { font: inherit; color: inherit; }
 
 /* ---------- board ---------- */
 
-.play-screen { justify-content: safe center; }
+.play-screen { justify-content: flex-start; }
 .mode-tabs { display: flex; justify-content: center; gap: 6px; padding: 10px 0 4px; flex: none; }
-.bar-center .mode-tabs { padding: 0; }
 .mode-tabs button {
   padding: 7px 15px;
   border: 0;
@@ -301,22 +298,6 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 .mode-tabs button[aria-pressed='true'] { background: var(--key-bg); color: var(--text); }
-
-.play-identity {
-  width: min(calc(100% - 32px), 430px);
-  margin: 0 auto;
-  padding: 10px 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-soft);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.play-identity span, .play-identity strong { display: block; }
-.play-identity strong { margin-top: 2px; color: var(--text); font-family: Georgia, 'Times New Roman', serif; font-size: 14px; letter-spacing: 0; text-transform: none; }
-.play-identity b { color: var(--correct); font-family: Georgia, 'Times New Roman', serif; font-size: 25px; font-weight: 700; letter-spacing: -0.08em; }
 
 .board-area { flex: none; display: flex; align-items: center; justify-content: center; padding: 12px 16px 24px; }
 
@@ -682,10 +663,8 @@ button { font: inherit; color: inherit; }
 
 @media (max-width: 500px) {
   .bar { height: 58px; padding: 0 8px; }
-  .bar[data-screen='play'] { height: 86px; }
   .brand-stamp { width: 25px; height: 25px; margin-right: 3px; font-size: 15px; }
   .play-screen .mode-tabs { padding-top: 14px; }
-  .play-screen .play-identity { padding-top: 8px; }
   .play-screen .board-area { padding: 8px 10px 20px; }
   .board-card { width: calc(100vw - 20px); padding: 12px; }
   .board { gap: 6px; width: min(100%, 340px); }
@@ -700,7 +679,6 @@ button { font: inherit; color: inherit; }
 
 @media (min-width: 501px) and (max-height: 820px) {
   .play-screen .mode-tabs { padding-top: 6px; padding-bottom: 2px; }
-  .play-screen .play-identity { padding-top: 5px; padding-bottom: 5px; }
   .play-screen .board-area { padding-top: 8px; padding-bottom: 16px; }
   .play-screen .board-card { width: min(calc(100vw - 20px), 322px); padding: 12px; }
   .play-screen .keyboard { gap: 6px; padding-bottom: 12px; }
@@ -709,7 +687,6 @@ button { font: inherit; color: inherit; }
 
 @media (max-width: 500px) and (max-height: 740px) {
   .play-screen .mode-tabs { padding-top: 6px; padding-bottom: 2px; }
-  .play-screen .play-identity { padding-top: 5px; padding-bottom: 5px; }
   .play-screen .board-area { padding-top: 6px; padding-bottom: 12px; }
   .play-screen .board-card { width: calc(100vw - 44px); padding: 12px; }
   .play-screen .keyboard { gap: 6px; padding-bottom: 12px; }
