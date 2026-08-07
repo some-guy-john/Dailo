@@ -11,7 +11,7 @@ import {
   saveStats,
   saveTheme,
 } from './game/storage'
-import { createEmptySession, GameServiceError, startGame, submitGuess as submitGuessToService } from './game/service'
+import { createEmptySession, GameServiceError, listArchivePuzzles, startGame, submitGuess as submitGuessToService } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createShareText } from './game/share'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
@@ -20,13 +20,17 @@ const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
 const PRAISE = ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew']
 
-type Screen = 'play' | 'games'
+type Screen = 'play' | 'games' | 'archive'
 type Dialog = 'stats' | 'help' | 'settings' | null
 
 function App() {
   const [today, setToday] = useState(getLondonDate)
   const [mode, setMode] = useState<GameMode>('daily')
   const [screen, setScreen] = useState<Screen>('play')
+  const [archiveDate, setArchiveDate] = useState<string | null>(null)
+  const [archivePuzzles, setArchivePuzzles] = useState<Awaited<ReturnType<typeof listArchivePuzzles>>>([])
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const [archiveError, setArchiveError] = useState('')
   const [dialog, setDialog] = useState<Dialog>(null)
   const [stats, setStats] = useState<Stats>(() => loadStats())
   const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
@@ -58,6 +62,9 @@ function App() {
   const isFinished = session.status !== 'active'
   const isBusy = isLoading || isSubmitting || !session.sessionToken
   const hasLoadError = !isLoading && !session.sessionToken
+  const archivePlayed = stats.archiveResults.length
+  const archiveWins = stats.archiveResults.filter((result) => result.won).length
+  const archiveWinPercentage = archivePlayed === 0 ? 0 : Math.round((archiveWins / archivePlayed) * 100)
 
   useEffect(() => {
     if (!session.sessionToken) return
@@ -90,8 +97,30 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (screen !== 'archive') return
     let cancelled = false
-    const requestKey = `${mode}:${today}:${reloadKey}`
+    setArchiveLoading(true)
+    setArchiveError('')
+    void listArchivePuzzles()
+      .then((puzzles) => {
+        if (cancelled) return
+        setArchivePuzzles(puzzles)
+        setArchiveLoading(false)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setArchiveLoading(false)
+        setArchiveError(error instanceof GameServiceError ? error.message : 'The archive could not be loaded.')
+      })
+    return () => { cancelled = true }
+  }, [screen])
+
+  useEffect(() => {
+    let cancelled = false
+    if (screen !== 'play') return () => { cancelled = true }
+    const gameDate = mode === 'archive' ? archiveDate : today
+    if (mode === 'archive' && !gameDate) return () => { cancelled = true }
+    const requestKey = `${mode}:${gameDate}:${reloadKey}`
 
     const continuingPreviousDaily = mode === 'daily'
       && session.mode === 'daily'
@@ -113,11 +142,11 @@ function App() {
     setCurrentGuess('')
     setNotice('')
     setRevealRow(-1)
-    setSession(createEmptySession(mode, today))
+    setSession(createEmptySession(mode, gameDate ?? today))
 
     const request = startRequestRef.current?.key === requestKey
       ? startRequestRef.current.promise
-      : startGame(mode, stats, today)
+      : startGame(mode, stats, gameDate ?? today)
 
     startRequestRef.current = { key: requestKey, promise: request }
 
@@ -140,7 +169,7 @@ function App() {
       })
 
     return () => { cancelled = true }
-  }, [mode, today, reloadKey])
+  }, [mode, today, archiveDate, reloadKey, screen])
 
   useEffect(() => {
     if (!dialog) return
@@ -230,6 +259,7 @@ function App() {
     if (nextMode === mode) return
     setDialog(null)
     setScreen('play')
+    setArchiveDate(null)
     setMode(nextMode)
   }
 
@@ -288,8 +318,23 @@ function App() {
     setReloadKey((value) => value + 1)
   }
 
+  function openArchive() {
+    setDialog(null)
+    setScreen('archive')
+    setArchiveDate(null)
+  }
+
+  function openArchivePuzzle(date: string) {
+    setDialog(null)
+    setArchiveDate(date)
+    setMode('archive')
+    setScreen('play')
+    setReloadKey((value) => value + 1)
+  }
+
   function openGame(nextMode: GameMode) {
     setScreen('play')
+    setArchiveDate(null)
     if (nextMode !== mode) {
       setMode(nextMode)
     } else if (nextMode === 'daily' && session.date !== today) {
@@ -336,7 +381,7 @@ function App() {
             </svg>
           </button>
         </div>
-        <h1>{screen === 'games' ? 'Dailo' : 'Wordo'}</h1>
+        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
         <div className="bar-right">
           <button className="icon-button" type="button" aria-label="Statistics" onClick={() => setDialog('stats')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -383,6 +428,17 @@ function App() {
                 <span className="game-go">Play</span>
               </button>
 
+              <button className="game-row" type="button" onClick={openArchive}>
+                <span className="game-thumb" aria-hidden="true">
+                  <i /><i data-state="correct" /><i data-state="present" /><i data-state="correct" />
+                </span>
+                <span>
+                  <b>Wordo Archive</b>
+                  <span className="game-note">Replay past daily editions</span>
+                </span>
+                <span className="game-go">Browse</span>
+              </button>
+
               <div className="game-row" data-locked="true">
                 <span className="game-thumb" aria-hidden="true"><i /><i /><i /><i /></span>
                 <span>
@@ -398,19 +454,47 @@ function App() {
             </p>
           </div>
         </section>
+      ) : screen === 'archive' ? (
+        <section className="screen" aria-label="Wordo archive">
+          <div className="archive-browser">
+            <div className="archive-heading">
+              <button className="back-link" type="button" onClick={() => setScreen('games')}>← All games</button>
+              <span>Replay desk</span>
+              <h2>Wordo Archive</h2>
+              <p>Past daily editions, separate from today’s streak.</p>
+            </div>
+            {archiveLoading && <p className="archive-status">Loading past editions…</p>}
+            {archiveError && <div className="error-bar" role="alert"><span>{archiveError}</span><button type="button" onClick={openArchive}>Retry</button></div>}
+            {!archiveLoading && !archiveError && (
+              <div className="archive-list">
+                {archivePuzzles.map((puzzle) => (
+                  <button className="archive-row" type="button" key={puzzle.date} onClick={() => openArchivePuzzle(puzzle.date)}>
+                    <span className="archive-date">{formatLondonDate(puzzle.date)}</span>
+                    <span className="archive-state">
+                      {puzzle.status === 'won' ? 'Solved' : puzzle.status === 'lost' ? 'Finished' : puzzle.status === 'active' ? 'In progress' : 'Play'}
+                    </span>
+                    <span aria-hidden="true">→</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="archive-foot">{archivePlayed} played · {archiveWins} won · archive results never change your streak</p>
+          </div>
+        </section>
       ) : (
         <section className="screen" aria-label="Wordo game">
             <nav className="mode-tabs" aria-label="Game mode">
               <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
               <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
+              {mode === 'archive' && <button type="button" aria-pressed="true" onClick={openArchive}>Archive</button>}
             </nav>
 
             <div className="play-identity">
               <div>
-                <span>{mode === 'daily' ? 'London daily edition' : 'Unlimited practice deck'}</span>
-                <strong>{mode === 'daily' ? formatLondonDate(today) : 'Play at your own pace'}</strong>
+                <span>{mode === 'daily' ? 'London daily edition' : mode === 'archive' ? 'Archived daily edition' : 'Unlimited practice deck'}</span>
+                <strong>{mode === 'daily' ? formatLondonDate(today) : mode === 'archive' ? formatLondonDate(session.date ?? today) : 'Play at your own pace'}</strong>
               </div>
-              <b aria-hidden="true">{mode === 'daily' ? 'LON' : '∞'}</b>
+              <b aria-hidden="true">{mode === 'daily' ? 'LON' : mode === 'archive' ? 'ARC' : '∞'}</b>
             </div>
 
             <div className="board-area">
@@ -523,31 +607,37 @@ function App() {
             <button className="icon-button modal-close" type="button" aria-label="Close statistics" onClick={() => setDialog(null)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
-            <h2 id="stats-title">Statistics</h2>
+            <h2 id="stats-title">{mode === 'archive' ? 'Archive result' : 'Statistics'}</h2>
             {verdict && <p className="verdict">{verdict}</p>}
 
             <div className="stat-row">
-              <div className="stat"><b>{dailyPlayed}</b><span>Played</span></div>
-              <div className="stat"><b>{winPercentage}</b><span>Win %</span></div>
-              <div className="stat"><b>{currentStreak}</b><span>Current streak</span></div>
-              <div className="stat"><b>{maximumStreak}</b><span>Max streak</span></div>
+              <div className="stat"><b>{mode === 'archive' ? archivePlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>
+              <div className="stat"><b>{mode === 'archive' ? archiveWinPercentage : winPercentage}</b><span>Win %</span></div>
+              <div className="stat"><b>{mode === 'archive' ? '—' : currentStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Current streak'}</span></div>
+              <div className="stat"><b>{mode === 'archive' ? '—' : maximumStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Max streak'}</span></div>
             </div>
 
-            <h2>Guess distribution</h2>
-            <div className="dist">
-              {distribution.map((count, index) => (
-                <div className="dist-row" key={index}>
-                  <span>{index + 1}</span>
-                  <div
-                    className="dist-bar"
-                    data-best={count > 0 && count === bestBucket}
-                    style={{ width: `${Math.max(8, Math.round((count / bestBucket) * 100))}%` }}
-                  >
-                    {count}
-                  </div>
+            {mode === 'archive' ? (
+              <p className="fine" style={{ margin: '-6px 0 18px', textAlign: 'center' }}>This result is saved separately and never changes your Daily streak.</p>
+            ) : (
+              <>
+                <h2>Guess distribution</h2>
+                <div className="dist">
+                  {distribution.map((count, index) => (
+                    <div className="dist-row" key={index}>
+                      <span>{index + 1}</span>
+                      <div
+                        className="dist-bar"
+                        data-best={count > 0 && count === bestBucket}
+                        style={{ width: `${Math.max(8, Math.round((count / bestBucket) * 100))}%` }}
+                      >
+                        {count}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
 
             <div className="share-split">
               <div className="next-in">

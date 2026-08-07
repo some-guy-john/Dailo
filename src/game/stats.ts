@@ -1,9 +1,10 @@
 import { shiftDate } from './date'
-import type { DailyResult, GameSession, Stats, UnlimitedResult } from './types'
+import type { ArchiveResult, DailyResult, GameSession, Stats, UnlimitedResult } from './types'
 
 export const EMPTY_STATS: Stats = {
   dailyResults: {},
   unlimitedResults: [],
+  archiveResults: [],
   recentUnlimitedPuzzleIds: [],
 }
 
@@ -51,6 +52,12 @@ export function recordSession(stats: Stats, session: GameSession): Stats {
       [session.date]: { date: session.date, won, guesses },
     }
     return { ...stats, dailyResults }
+  }
+
+  if (session.mode === 'archive' && session.date) {
+    const result: ArchiveResult = { date: session.date, puzzleId: session.puzzleId, won, guesses }
+    if (stats.archiveResults.some((item) => item.date === result.date)) return stats
+    return { ...stats, archiveResults: [...stats.archiveResults, result] }
   }
 
   const result: UnlimitedResult = { puzzleId: session.puzzleId, won, guesses }

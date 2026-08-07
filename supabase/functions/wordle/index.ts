@@ -6,7 +6,7 @@ type SessionRow = {
   id: string
   token_hash: string
   browser_id_hash: string | null
-  mode: 'daily' | 'unlimited'
+  mode: 'daily' | 'unlimited' | 'archive'
   puzzle_word_id: string
   daily_date: string | null
   status: 'active' | 'won' | 'lost' | 'abandoned' | 'expired'
@@ -91,7 +91,7 @@ async function publicState(session: SessionRow) {
 
 async function startSession(body: Record<string, unknown>) {
   const mode = body.mode
-  if (mode !== 'daily' && mode !== 'unlimited') {
+  if (mode !== 'daily' && mode !== 'unlimited' && mode !== 'archive') {
     throw new RequestError('invalid_mode', 'The game mode is invalid.', 400)
   }
 
@@ -149,6 +149,50 @@ async function startSession(body: Record<string, unknown>) {
     if (error) throw new RequestError('temporary_server_failure', error.message, 503)
     if (!assignment) throw new RequestError('missing_daily_assignment', 'Today’s puzzle is not available yet.', 503)
     puzzleWordId = assignment.answer_word_id
+  } else if (mode === 'archive') {
+    const archiveDate = requireString(body.archiveDate, 'archive_date', 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(archiveDate)) {
+      throw new RequestError('invalid_archive_date', 'The archive date is invalid.', 400)
+    }
+    const currentDate = londonDate()
+    if (archiveDate >= currentDate) {
+      throw new RequestError('archive_date_unavailable', 'Only past daily puzzles are available in the archive.', 422)
+    }
+    dailyDate = archiveDate
+
+    if (browserIdHash) {
+      const { data: existingSession, error: existingSessionError } = await admin
+        .from('wordle_game_sessions')
+        .select('id, token_hash, browser_id_hash, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
+        .eq('browser_id_hash', browserIdHash)
+        .eq('daily_date', archiveDate)
+        .eq('mode', 'archive')
+        .maybeSingle()
+
+      if (existingSessionError) throw new RequestError('temporary_server_failure', existingSessionError.message, 503)
+      if (existingSession) {
+        const existingToken = body.sessionToken
+        if (typeof existingToken !== 'string' || existingToken.length === 0) {
+          throw new RequestError('archive_already_started', 'This archive puzzle is already saved in this browser. Open it from this browser to resume.', 409)
+        }
+        const tokenHash = await hashToken(existingToken)
+        if (tokenHash !== existingSession.token_hash) {
+          throw new RequestError('archive_already_started', 'This archive puzzle is already saved in this browser. Open it from this browser to resume.', 409)
+        }
+        return { sessionToken: existingToken, state: await publicState(existingSession as unknown as SessionRow) }
+      }
+    }
+
+    const { data: assignment, error } = await admin
+      .from('wordle_daily_assignments')
+      .select('answer_word_id')
+      .eq('london_date', archiveDate)
+      .eq('status', 'published')
+      .maybeSingle()
+
+    if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+    if (!assignment) throw new RequestError('archive_date_unavailable', 'That daily puzzle is not available in the archive.', 404)
+    puzzleWordId = assignment.answer_word_id
   } else {
     const recentPuzzleIds = Array.isArray(body.recentPuzzleIds)
       ? body.recentPuzzleIds.filter(isUuid).slice(0, 20)
@@ -187,7 +231,7 @@ async function startSession(body: Record<string, unknown>) {
       mode,
       puzzle_word_id: puzzleWordId,
       daily_date: dailyDate,
-      expires_at: new Date(Date.now() + (mode === 'daily' ? 1000 * 60 * 60 * 24 * 8 : 1000 * 60 * 60 * 24)).toISOString(),
+      expires_at: new Date(Date.now() + (mode === 'daily' ? 1000 * 60 * 60 * 24 * 8 : mode === 'archive' ? 1000 * 60 * 60 * 24 * 365 : 1000 * 60 * 60 * 24)).toISOString(),
     })
     .select('id, token_hash, browser_id_hash, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
     .single()
@@ -229,6 +273,43 @@ async function submitGuess(body: Record<string, unknown>) {
   return { sessionToken: token, result: data }
 }
 
+async function listArchive(body: Record<string, unknown>) {
+  const currentDate = londonDate()
+  const browserIdHash = await hashOptionalIdentifier(body.browserId)
+  const { data: assignments, error: assignmentError } = await admin
+    .from('wordle_daily_assignments')
+    .select('london_date, wordle_words!inner(public_key)')
+    .eq('status', 'published')
+    .lt('london_date', currentDate)
+    .order('london_date', { ascending: false })
+    .limit(365)
+
+  if (assignmentError) throw new RequestError('temporary_server_failure', assignmentError.message, 503)
+
+  const dates = (assignments ?? []).map((assignment) => assignment.london_date)
+  let sessions: Array<{ daily_date: string; status: SessionRow['status'] }> = []
+  if (browserIdHash && dates.length > 0) {
+    const { data, error: sessionError } = await admin
+      .from('wordle_game_sessions')
+      .select('daily_date, status')
+      .eq('browser_id_hash', browserIdHash)
+      .eq('mode', 'archive')
+      .in('daily_date', dates)
+
+    if (sessionError) throw new RequestError('temporary_server_failure', sessionError.message, 503)
+    sessions = (data ?? []) as Array<{ daily_date: string; status: SessionRow['status'] }>
+  }
+
+  const statusByDate = new Map(sessions.map((session) => [session.daily_date, session.status]))
+  return {
+    archives: (assignments ?? []).map((assignment) => ({
+      date: assignment.london_date,
+      puzzleId: (assignment.wordle_words as { public_key: string }).public_key,
+      status: statusByDate.get(assignment.london_date) ?? null,
+    })),
+  }
+}
+
 async function handle(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return errorResponse('method_not_allowed', 'Use POST for this endpoint.', 405)
@@ -237,6 +318,7 @@ async function handle(request: Request): Promise<Response> {
     const body = await readBody(request)
     const action = body.action
     if (action === 'start') return json(await startSession(body))
+    if (action === 'archive-list') return json(await listArchive(body))
     if (action === 'guess') return json(await submitGuess(body))
     throw new RequestError('invalid_action', 'The requested action is invalid.', 400)
   } catch (error) {

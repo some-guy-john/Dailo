@@ -21,7 +21,14 @@ type BackendResponse = {
     attempt: { guess: string; result: GameSession['attempts'][number]['result'] }
     answer: string | null
   }
+  archives?: ArchivePuzzle[]
   error?: { code: string; message: string }
+}
+
+export type ArchivePuzzle = {
+  date: string
+  puzzleId: string
+  status: 'active' | 'won' | 'lost' | null
 }
 
 export const isProtectedBackendConfigured = Boolean(
@@ -38,7 +45,7 @@ export function createEmptySession(mode: GameMode, date: string): GameSession {
   return {
     mode,
     puzzleId: '',
-    date: mode === 'daily' ? date : null,
+    date: mode === 'unlimited' ? null : date,
     answer: null,
     attempts: [],
     status: 'active',
@@ -88,7 +95,7 @@ function fromBackendState(state: BackendState, sessionToken: string, previous?: 
 }
 
 export async function startGame(mode: GameMode, stats: Stats, date: string, forceNew = false): Promise<GameSession> {
-  const saved = forceNew ? null : loadSession(mode, mode === 'daily' ? date : null)
+  const saved = forceNew ? null : loadSession(mode, mode === 'unlimited' ? null : date)
 
   if (!isProtectedBackendConfigured) {
     throw new GameServiceError('configuration_missing', 'Connect Supabase before starting a protected game.')
@@ -97,6 +104,7 @@ export async function startGame(mode: GameMode, stats: Stats, date: string, forc
   const response = await callBackend({
     action: 'start',
     mode,
+    archiveDate: mode === 'archive' ? date : undefined,
     sessionToken: saved?.sessionToken,
     browserId: loadBrowserId(),
     recentPuzzleIds: stats.recentUnlimitedPuzzleIds,
@@ -105,6 +113,15 @@ export async function startGame(mode: GameMode, stats: Stats, date: string, forc
     throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete game.')
   }
   return fromBackendState(response.state, response.sessionToken, saved ?? undefined)
+}
+
+export async function listArchivePuzzles(): Promise<ArchivePuzzle[]> {
+  if (!isProtectedBackendConfigured) {
+    throw new GameServiceError('configuration_missing', 'Connect Supabase before opening the archive.')
+  }
+
+  const response = await callBackend({ action: 'archive-list', browserId: loadBrowserId() })
+  return response.archives ?? []
 }
 
 export async function submitGuess(session: GameSession, rawGuess: string): Promise<GameSession> {

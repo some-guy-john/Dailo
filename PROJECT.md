@@ -9,10 +9,11 @@ Release 1 is intentionally limited to a polished five-letter word game with:
 - One shared daily puzzle
 - Curated unlimited puzzles
 - Local progress and statistics
+- Anonymous archive replay for published past editions
 - Responsive and accessible play
 - Server-side protection of puzzle answers
 
-Accounts, archive play, multiplayer, crosswords, Connections, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1.
+Accounts, archive access control, multiplayer, crosswords, Connections, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1.
 
 ---
 
@@ -28,6 +29,7 @@ The deployed Release 1 experience includes:
 
 - Dailo games hub and shared navigation shell
 - Wordo Daily and Wordo Unlimited modes
+- Anonymous Wordo Archive browsing for published past editions
 - Protected Supabase sessions and server-authoritative guesses
 - London-time daily rollover handling
 - Browser-local stats, streaks, preferences, and refresh recovery
@@ -78,7 +80,6 @@ Release 1 does not include:
 - User accounts
 - Email collection
 - Cross-device synchronization
-- Archive or missed-daily play
 - Multiplayer or Versus mode
 - Timers
 - Matchmaking
@@ -1002,7 +1003,7 @@ The preferred order is:
 
 1. Operational improvements and content tooling
 2. Optional accounts and cross-device synchronization
-3. Archive play
+3. Archive play with later authentication and access control
 4. Basic untimed two-player Versus
 5. Timed Versus after ordinary multiplayer is reliable
 6. A graphical admin panel if the script-based workflow has become insufficient
@@ -1019,7 +1020,7 @@ The following decisions do not block Release 1:
 - Whether hard mode should be added
 - Whether sound effects should be added
 - Whether accounts should use passwords or passwordless email
-- How archive access should work
+- How archive access should work for authenticated users
 - Whether anonymous history should be migrated into a future account
 - How future Versus scoring should work
 - Whether timed multiplayer should exist

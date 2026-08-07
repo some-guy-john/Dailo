@@ -1,6 +1,6 @@
 export type TileState = 'empty' | 'correct' | 'present' | 'absent'
 
-export type GameMode = 'daily' | 'unlimited'
+export type GameMode = 'daily' | 'unlimited' | 'archive'
 
 export type GameStatus = 'active' | 'won' | 'lost'
 
@@ -35,8 +35,16 @@ export type UnlimitedResult = {
   guesses: number
 }
 
+export type ArchiveResult = {
+  date: string
+  puzzleId: string
+  won: boolean
+  guesses: number
+}
+
 export type Stats = {
   dailyResults: Record<string, DailyResult>
   unlimitedResults: UnlimitedResult[]
+  archiveResults: ArchiveResult[]
   recentUnlimitedPuzzleIds: string[]
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { calculateCurrentStreak, calculateMaximumStreak } from './stats'
+import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './stats'
+import type { Stats } from './types'
 
 describe('daily streaks', () => {
   it('counts consecutive wins through today', () => {
@@ -37,5 +38,29 @@ describe('daily streaks', () => {
       '2026-08-06': { date: '2026-08-06', won: true, guesses: 4 },
     }
     expect(calculateMaximumStreak(results)).toBe(3)
+  })
+})
+
+describe('archive results', () => {
+  it('records archive results without changing daily statistics', () => {
+    const stats: Stats = {
+      dailyResults: {},
+      unlimitedResults: [],
+      archiveResults: [],
+      recentUnlimitedPuzzleIds: [],
+    }
+    const next = recordSession(stats, {
+      mode: 'archive',
+      puzzleId: 'archive-puzzle',
+      date: '2026-08-06',
+      answer: 'CRANE',
+      attempts: [],
+      status: 'won',
+      startedAt: '2026-08-07T00:00:00.000Z',
+    })
+
+    expect(next.archiveResults).toEqual([{ date: '2026-08-06', puzzleId: 'archive-puzzle', won: true, guesses: 0 }])
+    expect(next.dailyResults).toEqual({})
+    expect(next.unlimitedResults).toEqual([])
   })
 })

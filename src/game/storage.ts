@@ -31,7 +31,15 @@ function write<T>(key: string, value: T): void {
 }
 
 export function loadStats(): Stats {
-  return read<Stats>(statsKey) ?? EMPTY_STATS
+  const stored = read<Partial<Stats>>(statsKey)
+  return {
+    ...EMPTY_STATS,
+    ...stored,
+    dailyResults: stored?.dailyResults ?? {},
+    unlimitedResults: stored?.unlimitedResults ?? [],
+    archiveResults: stored?.archiveResults ?? [],
+    recentUnlimitedPuzzleIds: stored?.recentUnlimitedPuzzleIds ?? [],
+  }
 }
 
 export function saveStats(stats: Stats): void {

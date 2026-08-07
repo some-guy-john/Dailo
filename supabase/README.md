@@ -30,6 +30,29 @@ Start or resume a game:
 }
 ```
 
+Archive listing:
+
+```json
+{
+  "action": "archive-list",
+  "browserId": "optional-local-identifier"
+}
+```
+
+Start or resume an archived daily:
+
+```json
+{
+  "action": "start",
+  "mode": "archive",
+  "archiveDate": "2026-08-01",
+  "sessionToken": "optional-existing-token",
+  "browserId": "optional-local-identifier"
+}
+```
+
+Archive requests only accept published dates before the current London date. Archive sessions use the protected guess endpoint but do not contribute to Daily statistics or streaks.
+
 Submit a guess:
 
 ```json
@@ -42,7 +65,7 @@ Submit a guess:
 }
 ```
 
-The function returns tile results and public state. It returns the answer only after a game is won or lost.
+The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing and archive sessions are anonymous for now; authentication/access control is intentionally deferred.
 
 ## Content Import
 

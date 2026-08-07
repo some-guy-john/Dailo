@@ -136,6 +136,41 @@ test.describe('protected Wordo play', () => {
     await expect(page.getByText('Connections')).toBeVisible()
   })
 
+  test('opens the protected archive browser and starts a past edition', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string; mode?: string }
+      if (body.action === 'archive-list') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ archives: [{ date: '2026-08-06', puzzleId: 'archive-puzzle', status: null }] }),
+        })
+        return
+      }
+
+      if (body.action === 'start' && body.mode === 'archive') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sessionToken: 'archive-test-token',
+            state: { mode: 'archive', puzzleId: 'archive-puzzle', date: '2026-08-06', status: 'active', attemptCount: 0, attempts: [], answer: null },
+          }),
+        })
+        return
+      }
+
+      await route.fallback()
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Wordo Archive/ }).click()
+    await expect(page.getByRole('heading', { name: 'Wordo Archive' })).toBeVisible()
+    await page.getByRole('button', { name: /Thu 6 Aug/ }).click()
+    await expect(page.getByRole('heading', { name: 'Wordo' })).toBeVisible()
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+    await expect(page.getByText('Archived daily edition')).toBeVisible()
+  })
+
   test('uses Dailo for the site and Wordo for the game', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Wordo' })).toBeVisible()

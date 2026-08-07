@@ -19,6 +19,8 @@ export function createShareText(session: GameSession, highContrast = false): str
     .join('\n')
   const label = session.mode === 'daily'
     ? `Dailo Wordo ${session.date ?? ''}`.trim()
-    : 'Dailo Wordo Unlimited'
+    : session.mode === 'archive'
+      ? `Dailo Wordo Archive ${session.date ?? ''}`.trim()
+      : 'Dailo Wordo Unlimited'
   return `${label} ${session.status === 'won' ? `${session.attempts.length}/6` : 'X/6'}\n\n${grid}`
 }
