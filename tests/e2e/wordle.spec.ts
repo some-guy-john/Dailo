@@ -4,7 +4,7 @@ test.describe('protected Wordle play', () => {
   test('loads the daily board without exposing the answer', async ({ page }) => {
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { name: 'Find the five.' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Wordle' })).toBeVisible()
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
     await expect(page.locator('.board-row')).toHaveCount(6)
     await expect(page.locator('.tile')).toHaveCount(30)
@@ -39,7 +39,7 @@ test.describe('protected Wordle play', () => {
     await page.goto('/')
     await page.getByRole('button', { name: /Unlimited/ }).click()
 
-    await expect(page.getByText('Curated puzzles · no clock')).toBeVisible()
+    await expect(page.getByText('Practice · no timer')).toBeVisible()
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
     await expect(page.locator('.board-row')).toHaveCount(6)
 

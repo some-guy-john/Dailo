@@ -27,10 +27,10 @@ function App() {
 
   const dailyResults = stats.dailyResults
   const maximumStreak = calculateMaximumStreak(dailyResults)
-  const modeLabel = mode === 'daily' ? 'Daily dispatch' : 'Unlimited practice'
+  const modeLabel = mode === 'daily' ? 'Daily' : 'Unlimited'
   const modeDescription = mode === 'daily'
-    ? `One shared puzzle · ${formatLondonDate(today)}`
-    : 'Curated puzzles · no clock'
+    ? `${formatLondonDate(today)} · London`
+    : 'Practice · no timer'
 
   useEffect(() => {
     if (!session.sessionToken) return
@@ -205,10 +205,7 @@ function App() {
           </nav>
 
           <div className="game-heading">
-            <div>
-              <p className="eyebrow">{modeLabel}</p>
-              <h2>Find the five.</h2>
-            </div>
+            <h1 className="game-title">Wordle</h1>
             <span className="date-stamp">{modeDescription}</span>
           </div>
 
