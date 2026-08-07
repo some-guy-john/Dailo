@@ -47,4 +47,15 @@ test.describe('protected Wordle play', () => {
     await page.keyboard.press('Enter')
     await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['A', 'A', 'L', 'I', 'I'])
   })
+
+  test('shows a result dialog after solving', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+    await page.keyboard.type('CRANE')
+    await page.keyboard.press('Enter')
+
+    const dialog = page.getByRole('dialog', { name: 'Solved.' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Share result' })).toBeVisible()
+  })
 })

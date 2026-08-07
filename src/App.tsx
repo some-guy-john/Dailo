@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatLondonDate, getLondonDate } from './game/date'
-import { calculateMaximumStreak, recordSession } from './game/stats'
+import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
 import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
 import { createEmptySession, GameServiceError, startGame, submitGuess as submitGuessToService } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
@@ -23,9 +23,13 @@ function App() {
   const [theme, setTheme] = useState(loadTheme)
   const [showStats, setShowStats] = useState(false)
   const [showTheme, setShowTheme] = useState(false)
+  const [showResult, setShowResult] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
+  const resultRef = useRef<HTMLElement>(null)
 
   const dailyResults = stats.dailyResults
+  const currentStreak = calculateCurrentStreak(dailyResults, today)
   const maximumStreak = calculateMaximumStreak(dailyResults)
   const modeLabel = mode === 'daily' ? 'Daily' : 'Unlimited'
   const modeDescription = mode === 'daily'
@@ -48,12 +52,13 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    const requestKey = `${mode}:${today}`
+    const requestKey = `${mode}:${today}:${reloadKey}`
     setIsLoading(true)
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
     setNotice('')
     setSession(createEmptySession(mode, today))
+    setShowResult(false)
 
     const request = startRequestRef.current?.key === requestKey
       ? startRequestRef.current.promise
@@ -65,6 +70,7 @@ function App() {
       .then((nextSession) => {
         if (cancelled) return
         setSession(nextSession)
+        setShowResult(nextSession.status !== 'active')
         setIsLoading(false)
       })
       .catch((error: unknown) => {
@@ -75,7 +81,12 @@ function App() {
       })
 
     return () => { cancelled = true }
-  }, [mode, today])
+  }, [mode, today, reloadKey])
+
+  useEffect(() => {
+    if (!showResult) return
+    resultRef.current?.focus()
+  }, [showResult])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -93,12 +104,12 @@ function App() {
   })
 
   function addLetter(letter: string) {
-    if (session.status !== 'active' || isLoading || currentGuess.length >= WORD_LENGTH) return
+    if (session.status !== 'active' || isLoading || !session.sessionToken || currentGuess.length >= WORD_LENGTH) return
     setCurrentGuess((value) => `${value}${letter.toUpperCase()}`)
   }
 
   function removeLetter() {
-    if (session.status !== 'active' || isLoading) return
+    if (session.status !== 'active' || isLoading || !session.sessionToken) return
     setCurrentGuess((value) => value.slice(0, -1))
   }
 
@@ -111,9 +122,11 @@ function App() {
       const lastAttempt = nextSession.attempts[nextSession.attempts.length - 1]
       if (lastAttempt) setKeyboard((value) => mergeKeyboardState(value, lastAttempt.guess, lastAttempt.result))
       setSession(nextSession)
+      saveSession(nextSession)
       setCurrentGuess('')
 
       if (nextSession.status === 'won' || nextSession.status === 'lost') {
+        setShowResult(true)
         setStats((currentStats) => recordSession(currentStats, nextSession))
         setNotice(nextSession.status === 'won'
           ? `Solved in ${nextSession.attempts.length} ${nextSession.attempts.length === 1 ? 'guess' : 'guesses'}`
@@ -136,11 +149,14 @@ function App() {
 
     setIsLoading(true)
     setNotice('')
+    setShowResult(false)
     void startGame('unlimited', stats, today, true)
       .then((nextSession) => {
         setSession(nextSession)
+        saveSession(nextSession)
         setKeyboard(EMPTY_KEYBOARD)
         setCurrentGuess('')
+        setShowResult(false)
         setIsLoading(false)
       })
       .catch((error: unknown) => {
@@ -158,16 +174,40 @@ function App() {
     const text = createShareText(session)
 
     try {
-      await navigator.clipboard.writeText(text)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = text
+        textarea.setAttribute('readonly', '')
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        if (!document.execCommand('copy')) throw new Error('copy_failed')
+        textarea.remove()
+      }
       setNotice('Result copied to clipboard')
     } catch {
       setNotice('Copy is unavailable in this browser')
     }
   }
 
+  function retryLoad() {
+    startRequestRef.current = null
+    setReloadKey((value) => value + 1)
+  }
+
   const isFinished = session.status !== 'active'
+  const isBusy = isLoading || isSubmitting || !session.sessionToken
   const keyboardRows = [LETTERS.slice(0, 10), LETTERS.slice(10, 19), LETTERS.slice(19)]
   const dailyWon = dailyResults[today]?.won
+  const hasLoadError = !isLoading && !session.sessionToken
+  const statusMessage = isLoading
+    ? 'Loading puzzle…'
+    : isSubmitting
+      ? 'Checking guess…'
+      : notice
 
   return (
     <div className="site-frame">
@@ -210,16 +250,17 @@ function App() {
           </div>
 
           <div className="board-wrap">
-            <div className="board" data-ready={!isLoading} aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}>
+            <div className="board" data-ready={!isLoading && Boolean(session.sessionToken)} aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}>
               {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
                 const attempt = session.attempts[rowIndex]
                 const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active'
                 return (
-                  <div className={`board-row ${isCurrentRow ? 'current-row' : ''}`} key={rowIndex}>
+                  <div className={`board-row ${isCurrentRow ? 'current-row' : ''}`} aria-label={`Guess ${rowIndex + 1}`} key={rowIndex}>
                     {Array.from({ length: WORD_LENGTH }).map((_, letterIndex) => {
                       const letter = attempt?.guess[letterIndex] ?? (isCurrentRow ? currentGuess[letterIndex] : '')
                       const state = attempt?.result[letterIndex] ?? 'empty'
-                      return <div className={`tile tile-${state} ${letter ? 'filled' : ''}`} key={letterIndex}>{letter}</div>
+                      const stateLabel = state === 'correct' ? 'correct' : state === 'present' ? 'present' : state === 'absent' ? 'absent' : 'empty'
+                      return <div className={`tile tile-${state} ${letter ? 'filled' : ''}`} aria-label={`${letter || 'empty'}, ${stateLabel}`} key={letterIndex}>{letter}</div>
                     })}
                   </div>
                 )
@@ -227,33 +268,46 @@ function App() {
             </div>
           </div>
 
-          <p className="notice" aria-live="polite">{notice || '\u00a0'}</p>
+          <div className="game-status" aria-live="polite" role={hasLoadError ? 'alert' : undefined}>
+            <span>{statusMessage || '\u00a0'}</span>
+            {hasLoadError && <button className="retry-button" type="button" onClick={retryLoad}>Retry</button>}
+          </div>
 
           <div className="keyboard" aria-label="On-screen keyboard">
             {keyboardRows.map((row, rowIndex) => (
               <div className="keyboard-row" key={rowIndex}>
-                {rowIndex === 2 && <button className="key key-wide" type="button" onClick={removeLetter} aria-label="Backspace">⌫</button>}
-                {row.map((letter) => <button key={letter} type="button" className={`key key-${keyboard[letter] ?? 'empty'}`} onClick={() => addLetter(letter)}>{letter}</button>)}
-                {rowIndex === 2 && <button className="key key-wide key-enter" type="button" onClick={submitGuess}>Enter</button>}
+                {rowIndex === 2 && <button className="key key-wide" type="button" onClick={removeLetter} disabled={isBusy || isFinished} aria-label="Backspace">⌫</button>}
+                {row.map((letter) => <button key={letter} type="button" className={`key key-${keyboard[letter] ?? 'empty'}`} onClick={() => addLetter(letter)} disabled={isBusy || isFinished} aria-label={`${letter}${keyboard[letter] ? `, ${keyboard[letter]}` : ''}`}>{letter}</button>)}
+                {rowIndex === 2 && <button className="key key-wide key-enter" type="button" onClick={submitGuess} disabled={isBusy || isFinished}>Enter</button>}
               </div>
             ))}
           </div>
 
-          {isFinished && (
-            <div className="result-tray">
-              <div>
-                <span className="eyebrow">{session.status === 'won' ? 'Nicely done' : 'The word was'}</span>
-                <strong>{session.status === 'won' ? `${session.attempts.length} / 6` : session.answer}</strong>
-              </div>
-              <div className="result-actions">
-                <button className="outline-button" type="button" onClick={shareResult}>Share result</button>
-                {mode === 'unlimited' && <button className="solid-button" type="button" onClick={startUnlimited}>Next puzzle <span>→</span></button>}
-                {mode === 'daily' && dailyWon && <span className="next-note">Back tomorrow</span>}
-              </div>
-            </div>
+          {isFinished && !showResult && (
+            <button className="result-reopen" type="button" onClick={() => setShowResult(true)}>View result</button>
           )}
         </section>
       </main>
+
+      {showResult && isFinished && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowResult(false)}>
+          <section className="result-modal" ref={resultRef} role="dialog" aria-modal="true" aria-labelledby="result-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+            <button className="modal-close" type="button" aria-label="Close result" onClick={() => setShowResult(false)}>×</button>
+            <p className="eyebrow">{mode === 'daily' ? 'Daily result' : 'Practice result'}</p>
+            <h2 id="result-title">{session.status === 'won' ? 'Solved.' : 'Not this time.'}</h2>
+            <p className="result-copy">
+              {session.status === 'won'
+                ? `You found it in ${session.attempts.length} ${session.attempts.length === 1 ? 'guess' : 'guesses'}.`
+                : <>The answer was <strong>{session.answer}</strong>.</>}
+            </p>
+            <div className="result-actions">
+              <button className="outline-button" type="button" onClick={shareResult}>Share result</button>
+              {mode === 'unlimited' && <button className="solid-button" type="button" onClick={startUnlimited}>Next puzzle <span>→</span></button>}
+              {mode === 'daily' && dailyWon && <span className="next-note">Back tomorrow</span>}
+            </div>
+          </section>
+        </div>
+      )}
 
       {showStats && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowStats(false)}>
@@ -262,6 +316,7 @@ function App() {
             <p className="eyebrow">Your record</p>
             <h2 id="stats-title">A little consistency<br />goes a long way.</h2>
             <div className="stats-grid">
+              <Stat label="Current streak" value={currentStreak} />
               <Stat label="Daily played" value={Object.keys(stats.dailyResults).length} />
               <Stat label="Daily wins" value={Object.values(stats.dailyResults).filter((result) => result.won).length} />
               <Stat label="Best streak" value={maximumStreak} />

@@ -94,22 +94,23 @@ h2 { font-size: clamp(1.75rem, 3vw, 2.45rem); font-weight: 600; line-height: 1; 
 .tile-correct { border-color: var(--blue); color: #fff; background: var(--blue); }
 .tile-present { border-color: var(--yellow); color: var(--ink); background: var(--yellow); }
 .tile-absent { border-color: var(--wrong); color: var(--cream); background: var(--wrong); }
-.notice { min-height: 22px; margin: 17px 0 9px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.66rem; text-align: center; }
+.game-status { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 30px; margin: 13px 0 8px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.64rem; text-align: center; }
+.retry-button, .result-reopen { border: 0; color: var(--blue-dark); background: transparent; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.62rem; font-weight: 500; text-transform: uppercase; }
+.retry-button:hover, .result-reopen:hover { text-decoration: underline; }
 
 .keyboard { display: grid; gap: 7px; width: min(100%, 448px); margin: 0 auto; }
 .keyboard-row { display: flex; justify-content: center; gap: 5px; }
 .key { min-width: 31px; height: 46px; padding: 0 4px; border: 0; border-radius: 4px; color: var(--ink); background: var(--panel); cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.73rem; font-weight: 500; transition: transform 100ms ease, background 150ms ease; }
 .key:hover { transform: translateY(-1px); background: var(--line); }
 .key:active { transform: translateY(1px); }
+.key:disabled { cursor: default; opacity: 0.58; transform: none; }
 .key-wide { min-width: 48px; color: var(--muted); font-size: 1.05rem; }
 .key-enter { color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; }
 .key-correct { color: #fff; background: var(--blue); }
 .key-present { color: var(--ink); background: var(--yellow); }
 .key-absent { color: var(--cream); background: var(--wrong); }
 
-.result-tray { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 25px; padding: 17px 18px; border: 1px solid var(--line); background: var(--panel); }
-.result-tray .eyebrow { margin-bottom: 5px; }
-.result-tray strong { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; letter-spacing: -0.04em; }
+.result-reopen { display: block; margin: 18px auto 0; padding: 8px; }
 .result-actions { display: flex; align-items: center; gap: 9px; }
 .outline-button, .solid-button { min-height: 38px; padding: 0 13px; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; font-size: 0.68rem; font-weight: 700; white-space: nowrap; }
 .outline-button { color: var(--ink); background: transparent; }
@@ -122,6 +123,10 @@ h2 { font-size: clamp(1.75rem, 3vw, 2.45rem); font-weight: 600; line-height: 1; 
 .modal-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(23, 42, 61, 0.42); }
 .stats-modal { position: relative; width: min(100%, 470px); padding: 38px; border: 1px solid var(--line); background: var(--cream); box-shadow: 0 20px 70px var(--shadow); }
 .stats-modal h2 { margin-bottom: 30px; }
+.result-modal { position: relative; width: min(100%, 430px); padding: 36px; border: 1px solid var(--line); background: var(--cream); box-shadow: 0 20px 70px var(--shadow); }
+.result-modal h2 { margin-bottom: 12px; }
+.result-copy { margin-bottom: 28px; color: var(--muted); font-size: 0.86rem; line-height: 1.6; }
+.result-copy strong { color: var(--ink); font-family: 'DM Mono', monospace; letter-spacing: 0.08em; }
 .modal-close { position: absolute; top: 15px; right: 17px; border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 1.5rem; line-height: 1; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .modal-stat { padding: 17px 7px; border-right: 1px solid var(--line); }
@@ -159,8 +164,7 @@ h2 { font-size: clamp(1.75rem, 3vw, 2.45rem); font-weight: 600; line-height: 1; 
   .keyboard-row { gap: 3px; }
   .key { min-width: calc((100vw - 78px) / 10); height: 43px; font-size: 0.67rem; }
   .key-wide { min-width: 43px; }
-  .result-tray { align-items: flex-start; flex-direction: column; }
-  .stats-modal { padding: 31px 22px; }
+  .result-modal, .stats-modal { padding: 31px 22px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .modal-stat:nth-child(2) { border-right: 0; }
   .modal-stat:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
