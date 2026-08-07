@@ -39,6 +39,8 @@ Archive listing:
 }
 ```
 
+Archive requests must include the Supabase access token in an `Authorization: Bearer <access-token>` header. The user must have a confirmed email address.
+
 Start or resume an archived daily:
 
 ```json
@@ -65,7 +67,7 @@ Submit a guess:
 }
 ```
 
-The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Daily and Unlimited remain anonymous.
+The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Authenticated Archive sessions can be resumed across devices. Daily and Unlimited remain anonymous.
 
 ## Content Import
 

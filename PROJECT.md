@@ -9,11 +9,11 @@ Release 1 is intentionally limited to a polished five-letter word game with:
 - One shared daily puzzle
 - Curated unlimited puzzles
 - Local progress and statistics
-- Anonymous archive replay for published past editions
+- Confirmed-account archive replay for published past editions
 - Responsive and accessible play
 - Server-side protection of puzzle answers
 
-Accounts, archive access control, multiplayer, crosswords, Connections, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1.
+Full account-backed history, multiplayer, crosswords, Connections, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1. Archive access uses a confirmed email/password account, while Daily and Unlimited remain anonymous.
 
 ---
 
@@ -29,14 +29,17 @@ The deployed Release 1 experience includes:
 
 - Dailo games hub and shared navigation shell
 - Wordo Daily and Wordo Unlimited modes
-- Anonymous Wordo Archive browsing for published past editions
+- Confirmed-account Wordo Archive browsing for published past editions
+- Supabase email/password accounts for Archive access, including email confirmation and password recovery
+- Cross-device resume for authenticated Archive sessions
+- Server-synced Archive play statistics
 - Protected Supabase sessions and server-authoritative guesses
 - London-time daily rollover handling
 - Browser-local stats, streaks, preferences, and refresh recovery
 - Responsive mobile and desktop layout with reduced-motion and high-contrast options
 - GitHub Pages deployment at `https://some-guy-john.github.io/Dailo/`
 
-The current content schedule contains 61 published daily assignments and 305 reviewed drafts through `2026-10-06`. Future content is published through the controlled scripts in `scripts/`, not from the public frontend.
+The current content schedule contains 91 published daily assignments and 275 reviewed drafts through `2026-11-05`. Future content is published through the controlled scripts in `scripts/`, not from the public frontend.
 
 The priorities, in order, are:
 
@@ -77,9 +80,8 @@ Release 1 includes:
 
 Release 1 does not include:
 
-- User accounts
-- Email collection
-- Cross-device synchronization
+- Full account-backed Daily or Unlimited history
+- General cross-device synchronization outside authenticated Archive sessions
 - Multiplayer or Versus mode
 - Timers
 - Matchmaking
@@ -119,7 +121,7 @@ A feature is not complete until it has:
 
 ### 3.2 Minimal Personal Data
 
-Release 1 does not require an account, name, email address, public profile, or social identity.
+Daily and Unlimited do not require an account, name, email address, public profile, or social identity. Archive access requires a confirmed email/password account, but does not expose a public profile or social identity.
 
 The system may store technical data needed to operate game sessions, prevent malformed requests, and enforce basic rate limits. It must not intentionally collect personal profile data.
 
@@ -1002,12 +1004,10 @@ Future work should be considered only after Release 1 is stable.
 The preferred order is:
 
 1. Operational improvements and content tooling
-2. Optional accounts and cross-device synchronization
-3. Archive play with later authentication and access control
-4. Basic untimed two-player Versus
-5. Timed Versus after ordinary multiplayer is reliable
-6. A graphical admin panel if the script-based workflow has become insufficient
-7. Additional games based on validated demand
+2. Basic untimed two-player Versus
+3. Timed Versus after ordinary multiplayer is reliable
+4. A graphical admin panel if the script-based workflow has become insufficient
+5. Additional games based on validated demand
 
 No future feature should be added merely because the initial architecture attempted to anticipate it.
 
@@ -1019,9 +1019,6 @@ The following decisions do not block Release 1:
 
 - Whether hard mode should be added
 - Whether sound effects should be added
-- Whether accounts should use passwords or passwordless email
-- How archive access should work for authenticated users
-- Whether anonymous history should be migrated into a future account
 - How future Versus scoring should work
 - Whether timed multiplayer should exist
 - Which game should follow Wordo
