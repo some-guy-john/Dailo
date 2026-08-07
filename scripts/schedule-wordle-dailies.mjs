@@ -8,6 +8,7 @@ const answersFile = process.argv[2] ?? 'C:/laragon/www/wordle-answers.txt'
 const startDate = process.argv[3]
 const requestedCount = Number.parseInt(process.argv[4] ?? '365', 10)
 const publish = process.argv.includes('--publish')
+const spread = process.argv.includes('--spread')
 
 if (answersFile.startsWith('-') || !startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
   console.error('Usage: node scripts/schedule-wordle-dailies.mjs <answers.txt> <start-date> <count> [--publish]')
@@ -59,7 +60,7 @@ async function runSqlFile(sql) {
 const answers = parseAnswers(await readFile(answersFile, 'utf8'))
 const assignments = Array.from({ length: requestedCount }, (_, index) => ({
   date: shiftDate(startDate, index),
-  answer: answers[index % answers.length],
+  answer: answers[(index * (spread ? 37 : 1)) % answers.length],
 }))
 const status = publish ? 'published' : 'draft'
 const values = assignments

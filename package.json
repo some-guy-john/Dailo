@@ -13,6 +13,8 @@
     "curate:words": "node scripts/curate-wordle-lists.mjs",
     "import:words": "node scripts/import-wordle-words.mjs",
     "schedule:dailies": "node scripts/schedule-wordle-dailies.mjs",
+    "review:schedule": "node scripts/review-wordle-schedule.mjs",
+    "publish:dailies": "node scripts/publish-wordle-dailies.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

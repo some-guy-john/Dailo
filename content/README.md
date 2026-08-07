@@ -35,10 +35,28 @@ Schedule future dailies as drafts first:
 npm run schedule:dailies -- C:\laragon\www\wordle-answers.txt 2026-08-08 365
 ```
 
+Use `--spread` to distribute the answer file across the year instead of following its alphabetical order:
+
+```powershell
+npm run schedule:dailies -- C:\laragon\www\wordle-answers.txt 2026-08-08 365 --spread
+```
+
+Preview proposed dates and existing statuses without writing:
+
+```powershell
+npm run review:schedule -- C:\laragon\www\wordle-answers.txt 2026-08-08 30
+```
+
 Publish them explicitly when reviewed:
 
 ```powershell
 npm run schedule:dailies -- C:\laragon\www\wordle-answers.txt 2026-08-08 365 --publish
+```
+
+Publish existing reviewed drafts without inserting or replacing assignments:
+
+```powershell
+npm run publish:dailies -- 2026-08-08 30
 ```
 
 Scheduling only inserts missing dates into `public.wordle_daily_assignments`. It never replaces an existing assignment and does not touch any other table.
