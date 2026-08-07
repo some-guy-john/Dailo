@@ -482,7 +482,7 @@ function App() {
     setReloadKey((value) => value + 1)
   }
 
-  const statusMessage = isLoading ? 'Loading puzzle…' : isSubmitting ? 'Checking guess…' : notice
+  const statusMessage = isLoading ? 'Loading puzzle…' : notice
   const verdict = !isFinished
     ? ''
     : session.status === 'won'

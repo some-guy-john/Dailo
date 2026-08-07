@@ -60,6 +60,7 @@ test.describe('protected Wordo play', () => {
     await page.keyboard.type('CRANE')
     await page.keyboard.press('Enter')
     await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['C', 'R', 'A', 'N', 'E'])
+    await expect(page.locator('.toast')).not.toContainText('Checking guess')
   })
 
   test('rejects a removed generated word without consuming a row', async ({ page }) => {
