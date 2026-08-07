@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { formatLondonDate, getLondonDate } from './game/date'
 import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
 import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
-import { GameServiceError, getLocalInitialSession, startGame, submitGuess as submitGuessToService } from './game/service'
+import { createEmptySession, GameServiceError, startGame, submitGuess as submitGuessToService } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createShareText } from './game/share'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
@@ -14,7 +14,7 @@ function App() {
   const [today] = useState(getLondonDate)
   const [mode, setMode] = useState<GameMode>('daily')
   const [stats, setStats] = useState<Stats>(() => loadStats())
-  const [session, setSession] = useState<GameSession>(() => getLocalInitialSession('daily', loadStats(), today))
+  const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
   const [currentGuess, setCurrentGuess] = useState('')
   const [notice, setNotice] = useState('')
@@ -33,6 +33,7 @@ function App() {
     : 'Curated puzzles · no clock'
 
   useEffect(() => {
+    if (!session.sessionToken) return
     saveSession(session)
   }, [session])
 
@@ -51,6 +52,7 @@ function App() {
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
     setNotice('')
+    setSession(createEmptySession(mode, today))
 
     void startGame(mode, stats, today)
       .then((nextSession) => {

@@ -1,8 +1,6 @@
-import { getDailyAnswer, getDailyPuzzleId, getUnlimitedAnswer } from './puzzles'
-import { isGuessFormatValid, isWinningResult, normalizeGuess, scoreGuess } from './rules'
+import { isGuessFormatValid, normalizeGuess } from './rules'
 import { loadBrowserId, loadSession } from './storage'
 import type { GameMode, GameSession, Stats } from './types'
-import { LOCAL_WORDS } from './localWords'
 
 type BackendState = {
   mode: GameMode
@@ -36,33 +34,16 @@ export class GameServiceError extends Error {
   }
 }
 
-function createLocalSession(mode: GameMode, stats: Stats, date: string): GameSession {
-  if (mode === 'daily') {
-    return {
-      mode,
-      puzzleId: getDailyPuzzleId(date),
-      date,
-      answer: getDailyAnswer(date),
-      attempts: [],
-      status: 'active',
-      startedAt: new Date().toISOString(),
-    }
-  }
-
-  const puzzle = getUnlimitedAnswer(stats.recentUnlimitedPuzzleIds, getDailyAnswer(date))
+export function createEmptySession(mode: GameMode, date: string): GameSession {
   return {
     mode,
-    puzzleId: puzzle.puzzleId,
-    date: null,
-    answer: puzzle.answer,
+    puzzleId: '',
+    date: mode === 'daily' ? date : null,
+    answer: null,
     attempts: [],
     status: 'active',
     startedAt: new Date().toISOString(),
   }
-}
-
-export function getLocalInitialSession(mode: GameMode, stats: Stats, date: string): GameSession {
-  return loadSession(mode, mode === 'daily' ? date : null) ?? createLocalSession(mode, stats, date)
 }
 
 function endpoint(): string {
@@ -110,7 +91,7 @@ export async function startGame(mode: GameMode, stats: Stats, date: string, forc
   const saved = forceNew ? null : loadSession(mode, mode === 'daily' ? date : null)
 
   if (!isProtectedBackendConfigured) {
-    return saved ?? createLocalSession(mode, stats, date)
+    throw new GameServiceError('configuration_missing', 'Connect Supabase before starting a protected game.')
   }
 
   const response = await callBackend({
@@ -154,19 +135,5 @@ export async function submitGuess(session: GameSession, rawGuess: string): Promi
     }
   }
 
-  if (!LOCAL_WORDS.includes(guess)) {
-    throw new GameServiceError('guess_not_in_accepted_list', 'That word is not in the list.')
-  }
-  if (!session.answer) throw new GameServiceError('puzzle_unavailable', 'This puzzle has no answer available.')
-
-  const result = scoreGuess(session.answer, guess)
-  const status = isWinningResult(result)
-    ? 'won'
-    : session.attempts.length + 1 >= 6 ? 'lost' : 'active'
-  return {
-    ...session,
-    attempts: [...session.attempts, { guess, result }],
-    status,
-    completedAt: status === 'active' ? undefined : new Date().toISOString(),
-  }
+  throw new GameServiceError('configuration_missing', 'Connect Supabase before submitting a protected guess.')
 }

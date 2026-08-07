@@ -77,7 +77,10 @@ async function publicState(session: SessionRow) {
     date: session.daily_date,
     status: session.status,
     attemptCount: session.attempt_count,
-    attempts: (attempts ?? []) as AttemptRow[],
+    attempts: (attempts ?? []).map((attempt) => ({
+      guess: attempt.guess_word,
+      result: attempt.tile_result,
+    })),
     answer: session.status === 'won' || session.status === 'lost'
       ? session.wordle_words?.normalized_word ?? null
       : null,
