@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatLondonDate, getLondonDate } from './game/date'
 import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
 import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
@@ -23,6 +23,7 @@ function App() {
   const [theme, setTheme] = useState(loadTheme)
   const [showStats, setShowStats] = useState(false)
   const [showTheme, setShowTheme] = useState(false)
+  const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
 
   const dailyResults = stats.dailyResults
   const currentStreak = calculateCurrentStreak(dailyResults, today)
@@ -48,13 +49,20 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
+    const requestKey = `${mode}:${today}`
     setIsLoading(true)
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
     setNotice('')
     setSession(createEmptySession(mode, today))
 
-    void startGame(mode, stats, today)
+    const request = startRequestRef.current?.key === requestKey
+      ? startRequestRef.current.promise
+      : startGame(mode, stats, today)
+
+    startRequestRef.current = { key: requestKey, promise: request }
+
+    void request
       .then((nextSession) => {
         if (cancelled) return
         setSession(nextSession)
@@ -62,6 +70,7 @@ function App() {
       })
       .catch((error: unknown) => {
         if (cancelled) return
+        startRequestRef.current = null
         setIsLoading(false)
         setNotice(error instanceof GameServiceError ? error.message : 'The game could not be loaded.')
       })
@@ -85,12 +94,12 @@ function App() {
   })
 
   function addLetter(letter: string) {
-    if (session.status !== 'active' || currentGuess.length >= WORD_LENGTH) return
+    if (session.status !== 'active' || isLoading || currentGuess.length >= WORD_LENGTH) return
     setCurrentGuess((value) => `${value}${letter.toUpperCase()}`)
   }
 
   function removeLetter() {
-    if (session.status !== 'active') return
+    if (session.status !== 'active' || isLoading) return
     setCurrentGuess((value) => value.slice(0, -1))
   }
 
@@ -239,7 +248,7 @@ function App() {
           </div>
 
           <div className="board-wrap">
-            <div className="board" aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}>
+            <div className="board" data-ready={!isLoading} aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}>
               {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
                 const attempt = session.attempts[rowIndex]
                 const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active'

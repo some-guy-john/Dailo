@@ -5,3 +5,5 @@ dist/
 !.env.example
 coverage/
 supabase/.temp/
+playwright-report/
+test-results/

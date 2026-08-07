@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "validate:content": "node scripts/validate-wordle-content.mjs",
     "curate:words": "node scripts/curate-wordle-lists.mjs",
     "import:words": "node scripts/import-wordle-words.mjs",
@@ -21,6 +22,8 @@
     "vite": "^7.1.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "jsdom": "^26.1.0",
