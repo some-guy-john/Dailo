@@ -28,3 +28,17 @@ npm run import:words -- C:\laragon\www\wordle-valid-guesses.txt C:\laragon\www\w
 The importer only writes to `public.wordle_words`. Existing rows absent from the new lists are retired rather than deleted, preserving game-session and daily-assignment references. It uses normalized-word conflicts so rerunning it is safe and does not touch any other application tables.
 
 Valid guesses receive `accepted_guess = true`. Only the curated answer list receives `eligible_answer = true`.
+
+Schedule future dailies as drafts first:
+
+```powershell
+npm run schedule:dailies -- C:\laragon\www\wordle-answers.txt 2026-08-08 365
+```
+
+Publish them explicitly when reviewed:
+
+```powershell
+npm run schedule:dailies -- C:\laragon\www\wordle-answers.txt 2026-08-08 365 --publish
+```
+
+Scheduling only inserts missing dates into `public.wordle_daily_assignments`. It never replaces an existing assignment and does not touch any other table.

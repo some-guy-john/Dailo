@@ -11,6 +11,7 @@
     "validate:content": "node scripts/validate-wordle-content.mjs",
     "curate:words": "node scripts/curate-wordle-lists.mjs",
     "import:words": "node scripts/import-wordle-words.mjs",
+    "schedule:dailies": "node scripts/schedule-wordle-dailies.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
