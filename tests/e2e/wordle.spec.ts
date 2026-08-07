@@ -58,4 +58,20 @@ test.describe('protected Wordle play', () => {
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Share result' })).toBeVisible()
   })
+
+  test('explains the rules without adding page clutter', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'How to play' }).click()
+
+    await expect(page.getByRole('dialog', { name: 'Find the word in six.' })).toBeVisible()
+    await expect(page.getByText('Stats stay in this browser. No account is required.')).toBeVisible()
+  })
+
+  test('fits the game on a narrow phone viewport', async ({ browser }) => {
+    const page = await browser.newPage({ viewport: { width: 320, height: 700 } })
+    await page.goto('/')
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+    await page.close()
+  })
 })

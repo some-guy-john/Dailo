@@ -24,6 +24,7 @@ function App() {
   const [showStats, setShowStats] = useState(false)
   const [showTheme, setShowTheme] = useState(false)
   const [showResult, setShowResult] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
   const resultRef = useRef<HTMLElement>(null)
@@ -216,7 +217,8 @@ function App() {
           <span className="wordmark-mark" aria-hidden="true">+</span>
           <span>Dailies</span>
         </a>
-        <div className="header-actions">
+          <div className="header-actions">
+          <button className="text-button" type="button" onClick={() => setShowHelp(true)}>How to play</button>
           <button className="text-button" type="button" onClick={() => setShowStats(true)}>Stats</button>
           <div className="theme-wrap">
             <button className="icon-button" type="button" aria-label="Change appearance" onClick={() => setShowTheme((value) => !value)}>◐</button>
@@ -304,6 +306,26 @@ function App() {
               <button className="outline-button" type="button" onClick={shareResult}>Share result</button>
               {mode === 'unlimited' && <button className="solid-button" type="button" onClick={startUnlimited}>Next puzzle <span>→</span></button>}
               {mode === 'daily' && dailyWon && <span className="next-note">Back tomorrow</span>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showHelp && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowHelp(false)}>
+          <section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="modal-close" type="button" aria-label="Close how to play" onClick={() => setShowHelp(false)}>×</button>
+            <p className="eyebrow">Quick guide</p>
+            <h2 id="help-title">Find the word in six.</h2>
+            <div className="help-list">
+              <p><strong>Green</strong> means the letter is correct and in the right place.</p>
+              <p><strong>Yellow</strong> means the letter belongs somewhere else.</p>
+              <p><strong>Grey</strong> means it is not in the word.</p>
+            </div>
+            <div className="help-note">
+              <span>Daily resets at midnight</span>
+              <strong>Europe / London</strong>
+              <span>Stats stay in this browser. No account is required.</span>
             </div>
           </section>
         </div>

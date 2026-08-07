@@ -39,6 +39,13 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
+      - name: Verify compiled Pages entrypoint
+        shell: bash
+        run: |
+          test -f dist/index.html
+          grep -q './assets/' dist/index.html
+          ! grep -q '/src/main.tsx' dist/index.html
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
