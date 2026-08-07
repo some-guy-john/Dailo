@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { formatLondonDate, getLondonDate } from './game/date'
+import { formatCountdown, formatLondonDate, getLondonDate, getMillisecondsUntilLondonMidnight } from './game/date'
 import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
 import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
 import { createEmptySession, GameServiceError, startGame, submitGuess as submitGuessToService } from './game/service'
@@ -25,6 +25,7 @@ function App() {
   const [showTheme, setShowTheme] = useState(false)
   const [showResult, setShowResult] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [dailyCountdown, setDailyCountdown] = useState(() => formatCountdown(getMillisecondsUntilLondonMidnight()))
   const [reloadKey, setReloadKey] = useState(0)
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
   const resultRef = useRef<HTMLElement>(null)
@@ -50,6 +51,13 @@ function App() {
     document.documentElement.dataset.theme = theme === 'system' ? '' : theme
     saveTheme(theme)
   }, [theme])
+
+  useEffect(() => {
+    const updateCountdown = () => setDailyCountdown(formatCountdown(getMillisecondsUntilLondonMidnight()))
+    const interval = window.setInterval(updateCountdown, 15_000)
+    updateCountdown()
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -323,8 +331,9 @@ function App() {
               <p><strong>Grey</strong> means it is not in the word.</p>
             </div>
             <div className="help-note">
-              <span>Daily resets at midnight</span>
-              <strong>Europe / London</strong>
+              <span>Daily resets in</span>
+              <strong aria-label={`${dailyCountdown} until the next daily`}>{dailyCountdown}</strong>
+              <span>Europe / London · midnight local time</span>
               <span>Stats stay in this browser. No account is required.</span>
             </div>
           </section>

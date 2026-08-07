@@ -65,6 +65,7 @@ test.describe('protected Wordle play', () => {
 
     await expect(page.getByRole('dialog', { name: 'Find the word in six.' })).toBeVisible()
     await expect(page.getByText('Stats stay in this browser. No account is required.')).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Find the word in six.' }).locator('.help-note strong')).toHaveText(/^\d{2}h \d{2}m$/)
   })
 
   test('fits the game on a narrow phone viewport', async ({ browser }) => {
