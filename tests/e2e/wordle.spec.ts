@@ -202,6 +202,28 @@ test.describe('protected Wordo play', () => {
     await expect(dialog.getByRole('button', { name: 'Send reset link' })).toBeVisible()
   })
 
+  test('directs unconfirmed archive users to account access', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action === 'archive-list') {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'archive_email_unconfirmed', message: 'Confirm your email before using Archive.' } }),
+        })
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Wordo Archive/ }).click()
+    await expect(page.getByRole('alert')).toContainText('Confirm your email before using Archive.')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await expect(page.getByRole('dialog', { name: 'Account' })).toBeVisible()
+  })
+
   test('fits the game on a narrow phone viewport', async ({ browser }) => {
     const page = await browser.newPage({ viewport: { width: 320, height: 700 } })
     await page.goto('/')

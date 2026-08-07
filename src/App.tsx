@@ -123,7 +123,7 @@ function App() {
       .catch((error: unknown) => {
         if (cancelled) return
         setArchiveLoading(false)
-        setArchiveAuthRequired(error instanceof GameServiceError && error.code === 'archive_auth_required')
+        setArchiveAuthRequired(error instanceof GameServiceError && (error.code === 'archive_auth_required' || error.code === 'archive_email_unconfirmed'))
         setArchiveError(error instanceof GameServiceError ? error.message : 'The archive could not be loaded.')
       })
     return () => { cancelled = true }
