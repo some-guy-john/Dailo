@@ -107,14 +107,15 @@ async function startSession(body: Record<string, unknown>, request: Request) {
     throw new RequestError('invalid_mode', 'The game mode is invalid.', 400)
   }
 
+  const authUser = mode === 'archive' ? await requireConfirmedUser(request) : null
+
   const providedToken = body.sessionToken
   if (providedToken !== undefined && providedToken !== null && providedToken !== '') {
     const token = requireString(providedToken, 'session_token', 256)
     const session = await findSession(token)
     if (session.mode !== mode) throw new RequestError('invalid_session', 'This session belongs to another mode.', 409)
     if (session.mode === 'archive') {
-      const authUser = await requireConfirmedUser(request)
-      if (session.auth_user_id !== authUser.id) throw new RequestError('invalid_session', 'This archive session belongs to another account.', 401)
+      if (session.auth_user_id !== authUser?.id) throw new RequestError('invalid_session', 'This archive session belongs to another account.', 401)
     }
 
     if (session.status === 'active' && new Date(session.expires_at) < new Date()) {
@@ -126,7 +127,6 @@ async function startSession(body: Record<string, unknown>, request: Request) {
   }
 
   const browserIdHash = await hashOptionalIdentifier(body.browserId)
-  const authUser = mode === 'archive' ? await requireConfirmedUser(request) : null
   let puzzleWordId: string
   let dailyDate: string | null = null
 
@@ -189,14 +189,24 @@ async function startSession(body: Record<string, unknown>, request: Request) {
       if (existingSessionError) throw new RequestError('temporary_server_failure', existingSessionError.message, 503)
       if (existingSession) {
         const existingToken = body.sessionToken
-        if (typeof existingToken !== 'string' || existingToken.length === 0) {
-          throw new RequestError('archive_already_started', 'This archive puzzle is already saved in this browser. Open it from this browser to resume.', 409)
+        if (typeof existingToken === 'string' && existingToken.length > 0) {
+          const tokenHash = await hashToken(existingToken)
+          if (tokenHash === existingSession.token_hash) {
+            return { sessionToken: existingToken, state: await publicState(existingSession as unknown as SessionRow) }
+          }
         }
-        const tokenHash = await hashToken(existingToken)
-        if (tokenHash !== existingSession.token_hash) {
-          throw new RequestError('archive_already_started', 'This archive puzzle is already saved in this browser. Open it from this browser to resume.', 409)
-        }
-        return { sessionToken: existingToken, state: await publicState(existingSession as unknown as SessionRow) }
+        // Authenticated owners may resume from a different browser. The new
+        // token is only returned after the user has been verified above.
+        const replacementToken = createSessionToken()
+        const replacementHash = await hashToken(replacementToken)
+        const { error: tokenError } = await admin
+          .from('wordle_game_sessions')
+          .update({ token_hash: replacementHash, browser_id_hash: browserIdHash })
+          .eq('id', existingSession.id)
+        if (tokenError) throw new RequestError('temporary_server_failure', tokenError.message, 503)
+        existingSession.token_hash = replacementHash
+        existingSession.browser_id_hash = browserIdHash
+        return { sessionToken: replacementToken, state: await publicState(existingSession as unknown as SessionRow) }
       }
     }
 
