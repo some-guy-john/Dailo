@@ -134,7 +134,8 @@ test.describe('protected Wordo play', () => {
 
     await page.keyboard.type('CRANE')
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('dialog', { name: 'Statistics' })).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Next puzzle' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Next puzzle' }).click()
     await expect(page.getByRole('dialog')).toHaveCount(0)

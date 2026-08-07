@@ -218,7 +218,7 @@ function App() {
           EMPTY_KEYBOARD,
         ))
         setIsLoading(false)
-        if (nextSession.status !== 'active') setDialog('stats')
+        if (nextSession.status !== 'active' && mode !== 'unlimited') setDialog('stats')
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -311,7 +311,7 @@ function App() {
         setNotice(nextSession.status === 'won'
           ? PRAISE[Math.min(nextSession.attempts.length, PRAISE.length) - 1]
           : nextSession.answer ?? 'Out of guesses')
-        window.setTimeout(() => setDialog('stats'), 1600)
+        if (nextSession.mode !== 'unlimited') window.setTimeout(() => setDialog('stats'), 1600)
       } else {
         setNotice('')
       }
@@ -497,7 +497,7 @@ function App() {
       data-contrast={preferences.highContrast ? 'on' : 'off'}
       data-motion={preferences.reduceMotion ? 'reduced' : 'normal'}
     >
-      <header className="bar" data-size={screen === 'games' ? 'small' : 'normal'}>
+      <header className="bar" data-screen={screen} data-size={screen === 'games' ? 'small' : 'normal'}>
         <div className="bar-left">
           <span className="brand-stamp" aria-label="Dailo">D</span>
           <button className="icon-button" type="button" aria-label="All games" onClick={() => { setDialog(null); setScreen('games') }}>
@@ -514,7 +514,16 @@ function App() {
             </svg>
           </button>
         </div>
-        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
+        <div className="bar-center">
+          <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
+          {screen === 'play' && (
+            <nav className="mode-tabs" aria-label="Game mode">
+              <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
+              <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
+              {mode === 'archive' && <button type="button" aria-pressed="true" onClick={openArchive}>Archive</button>}
+            </nav>
+          )}
+        </div>
         <div className="bar-right">
           <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -633,13 +642,7 @@ function App() {
         </section>
       ) : (
         <section className="screen play-screen" aria-label="Wordo game">
-            <nav className="mode-tabs" aria-label="Game mode">
-              <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
-              <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
-              {mode === 'archive' && <button type="button" aria-pressed="true" onClick={openArchive}>Archive</button>}
-            </nav>
-
-            <div className="play-identity">
+          <div className="play-identity">
               <div>
                 <span>{mode === 'daily' ? 'Daily edition' : mode === 'archive' ? 'Archived daily edition' : 'Unlimited practice deck'}</span>
                 <strong>{mode === 'daily' ? formatLondonDate(today) : mode === 'archive' ? formatLondonDate(session.date ?? today) : 'Play at your own pace'}</strong>
@@ -703,6 +706,12 @@ function App() {
             <div className="rollover-bar" role="status">
               <span>Yesterday’s puzzle is still in progress.</span>
               <button type="button" onClick={startToday}>Start today</button>
+            </div>
+          )}
+
+          {mode === 'unlimited' && isFinished && (
+            <div className="unlimited-next" role="status">
+              <button className="primary-button" type="button" onClick={startAnotherUnlimited}>Next puzzle</button>
             </div>
           )}
 

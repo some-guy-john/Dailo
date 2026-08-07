@@ -120,6 +120,8 @@ button { font: inherit; color: inherit; }
   background: var(--surface);
   flex: none;
 }
+.bar[data-screen='play'] { height: 92px; }
+.bar-center { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 
 .bar-left, .bar-right { min-width: 0; display: flex; align-items: center; gap: 2px; }
 .bar-right { justify-content: flex-end; }
@@ -286,6 +288,7 @@ button { font: inherit; color: inherit; }
 
 .play-screen { justify-content: safe center; }
 .mode-tabs { display: flex; justify-content: center; gap: 6px; padding: 10px 0 4px; flex: none; }
+.bar-center .mode-tabs { padding: 0; }
 .mode-tabs button {
   padding: 7px 15px;
   border: 0;
@@ -465,6 +468,9 @@ button { font: inherit; color: inherit; }
   font-weight: 700;
   cursor: pointer;
 }
+
+.unlimited-next { width: min(calc(100% - 32px), 430px); margin: -4px auto 18px; }
+.unlimited-next .primary-button { max-width: 280px; margin: 0 auto; }
 
 /* ---------- modals ---------- */
 
@@ -676,6 +682,7 @@ button { font: inherit; color: inherit; }
 
 @media (max-width: 500px) {
   .bar { height: 58px; padding: 0 8px; }
+  .bar[data-screen='play'] { height: 86px; }
   .brand-stamp { width: 25px; height: 25px; margin-right: 3px; font-size: 15px; }
   .play-screen .mode-tabs { padding-top: 14px; }
   .play-screen .play-identity { padding-top: 8px; }
