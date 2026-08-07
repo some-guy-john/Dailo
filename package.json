@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "validate:content": "node scripts/validate-wordle-content.mjs",
+    "curate:words": "node scripts/curate-wordle-lists.mjs",
     "import:words": "node scripts/import-wordle-words.mjs",
     "preview": "vite preview"
   },
@@ -24,6 +25,7 @@
     "jsdom": "^26.1.0",
     "supabase": "^2.111.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wordle-words": "^0.0.0"
   }
 }
