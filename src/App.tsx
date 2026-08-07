@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatLondonDate, getLondonDate } from './game/date'
-import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
+import { calculateMaximumStreak, recordSession } from './game/stats'
 import { loadStats, loadTheme, saveSession, saveStats, saveTheme } from './game/storage'
 import { createEmptySession, GameServiceError, startGame, submitGuess as submitGuessToService } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
@@ -26,7 +26,6 @@ function App() {
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
 
   const dailyResults = stats.dailyResults
-  const currentStreak = calculateCurrentStreak(dailyResults, today)
   const maximumStreak = calculateMaximumStreak(dailyResults)
   const modeLabel = mode === 'daily' ? 'Daily dispatch' : 'Unlimited practice'
   const modeDescription = mode === 'daily'
@@ -195,40 +194,6 @@ function App() {
       </header>
 
       <main id="top" className="main-layout">
-        <aside className="dispatch-panel">
-          <div>
-            <p className="eyebrow">A small word ritual</p>
-            <h1>Make a little room<br />for a good word.</h1>
-            <p className="intro-copy">A daily puzzle, a quiet minute, and just enough friction to make the answer feel earned.</p>
-          </div>
-
-          <div className="dispatch-note">
-            <span className="dispatch-dot" aria-hidden="true" />
-            <div>
-              <p className="eyebrow">Today’s dispatch</p>
-              <strong>{formatLondonDate(today)}</strong>
-              <span>New puzzle at midnight London time</span>
-            </div>
-          </div>
-
-          <div className="streak-card">
-            <div>
-              <span className="stat-number">{currentStreak}</span>
-              <span className="stat-label">current<br />streak</span>
-            </div>
-            <div className="streak-line" aria-hidden="true">
-              <span className={dailyWon ? 'active' : ''} />
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
-            <p>Keep the chain going<br />one day at a time.</p>
-          </div>
-
-          <p className="fine-print">Your progress stays in this browser for now. No account, no fuss.</p>
-        </aside>
-
         <section className="game-panel" aria-label="Wordle game">
           <nav className="mode-tabs" aria-label="Game mode">
             <button type="button" className={mode === 'daily' ? 'active' : ''} onClick={() => switchMode('daily')}>
@@ -292,11 +257,6 @@ function App() {
           )}
         </section>
       </main>
-
-      <footer className="site-footer">
-        <span>Built for the space between busy things.</span>
-        <span>Release 0.1 / local play</span>
-      </footer>
 
       {showStats && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowStats(false)}>
