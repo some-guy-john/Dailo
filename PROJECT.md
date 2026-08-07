@@ -184,13 +184,13 @@ Release 1 will use browser storage for:
 
 Local storage is not treated as secure or authoritative. The server remains authoritative for accepted guesses, attempt counts, game completion, and answer disclosure.
 
-### 4.4 No Authentication in Release 1
+### 4.4 Authentication
 
-Release 1 will not use email/password accounts.
+Daily and Unlimited remain available without an account. Archive requires a confirmed email/password account through Supabase Auth.
 
-Each game is authorized with an opaque, unguessable session token created by the server. The token is stored locally and sent only to the protected game endpoints.
+Each game is authorized with an opaque, unguessable session token created by the server. Archive requests also carry the Supabase access token, and the server verifies the user and confirmed email before allowing archive listing, session creation, resume, or guesses.
 
-A browser-installation identifier may be generated locally for continuity and basic abuse controls, but it is not an account and must not be presented as one.
+A browser-installation identifier may be generated locally for anonymous Daily and Unlimited continuity and basic abuse controls. It is not an account and must not be presented as one.
 
 ---
 

@@ -1,5 +1,6 @@
 import { isGuessFormatValid, normalizeGuess } from './rules'
 import { loadBrowserId, loadSession } from './storage'
+import { supabase } from '../lib/supabase'
 import type { GameMode, GameSession, Stats } from './types'
 
 type BackendState = {
@@ -59,12 +60,14 @@ function endpoint(): string {
 
 async function callBackend(body: Record<string, unknown>): Promise<BackendResponse> {
   let response: Response
+  const { data: { session: authSession } } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
+  const accessToken = authSession?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY
   try {
     response = await fetch(endpoint(), {
       method: 'POST',
       headers: {
         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),

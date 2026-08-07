@@ -6,6 +6,7 @@ type SessionRow = {
   id: string
   token_hash: string
   browser_id_hash: string | null
+  auth_user_id: string | null
   mode: 'daily' | 'unlimited' | 'archive'
   puzzle_word_id: string
   daily_date: string | null
@@ -48,11 +49,22 @@ async function hashOptionalIdentifier(value: unknown): Promise<string | null> {
   return hashToken(identifier)
 }
 
+async function requireConfirmedUser(request: Request): Promise<{ id: string; email: string | undefined }> {
+  const authorization = request.headers.get('Authorization') ?? ''
+  const match = authorization.match(/^Bearer\s+(.+)$/i)
+  if (!match) throw new RequestError('archive_auth_required', 'Sign in with a confirmed email to use Archive.', 401)
+
+  const { data, error } = await admin.auth.getUser(match[1])
+  if (error || !data.user) throw new RequestError('archive_auth_required', 'Sign in with a confirmed email to use Archive.', 401)
+  if (!data.user.email_confirmed_at) throw new RequestError('archive_email_unconfirmed', 'Confirm your email before using Archive.', 403)
+  return { id: data.user.id, email: data.user.email }
+}
+
 async function findSession(token: string): Promise<SessionRow> {
   const tokenHash = await hashToken(token)
   const { data, error } = await admin
     .from('wordle_game_sessions')
-    .select('id, token_hash, browser_id_hash, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
+    .select('id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
@@ -89,7 +101,7 @@ async function publicState(session: SessionRow) {
   return state
 }
 
-async function startSession(body: Record<string, unknown>) {
+async function startSession(body: Record<string, unknown>, request: Request) {
   const mode = body.mode
   if (mode !== 'daily' && mode !== 'unlimited' && mode !== 'archive') {
     throw new RequestError('invalid_mode', 'The game mode is invalid.', 400)
@@ -100,6 +112,10 @@ async function startSession(body: Record<string, unknown>) {
     const token = requireString(providedToken, 'session_token', 256)
     const session = await findSession(token)
     if (session.mode !== mode) throw new RequestError('invalid_session', 'This session belongs to another mode.', 409)
+    if (session.mode === 'archive') {
+      const authUser = await requireConfirmedUser(request)
+      if (session.auth_user_id !== authUser.id) throw new RequestError('invalid_session', 'This archive session belongs to another account.', 401)
+    }
 
     if (session.status === 'active' && new Date(session.expires_at) < new Date()) {
       await admin.from('wordle_game_sessions').update({ status: 'expired' }).eq('id', session.id)
@@ -110,6 +126,7 @@ async function startSession(body: Record<string, unknown>) {
   }
 
   const browserIdHash = await hashOptionalIdentifier(body.browserId)
+  const authUser = mode === 'archive' ? await requireConfirmedUser(request) : null
   let puzzleWordId: string
   let dailyDate: string | null = null
 
@@ -160,11 +177,11 @@ async function startSession(body: Record<string, unknown>) {
     }
     dailyDate = archiveDate
 
-    if (browserIdHash) {
+    if (authUser) {
       const { data: existingSession, error: existingSessionError } = await admin
         .from('wordle_game_sessions')
-        .select('id, token_hash, browser_id_hash, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
-        .eq('browser_id_hash', browserIdHash)
+        .select('id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
+        .eq('auth_user_id', authUser.id)
         .eq('daily_date', archiveDate)
         .eq('mode', 'archive')
         .maybeSingle()
@@ -228,25 +245,32 @@ async function startSession(body: Record<string, unknown>) {
     .insert({
       token_hash: tokenHash,
       browser_id_hash: browserIdHash,
+      auth_user_id: authUser?.id ?? null,
       mode,
       puzzle_word_id: puzzleWordId,
       daily_date: dailyDate,
       expires_at: new Date(Date.now() + (mode === 'daily' ? 1000 * 60 * 60 * 24 * 8 : mode === 'archive' ? 1000 * 60 * 60 * 24 * 365 : 1000 * 60 * 60 * 24)).toISOString(),
     })
-    .select('id, token_hash, browser_id_hash, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
+    .select('id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
     .single()
 
   if (error || !created) throw new RequestError('temporary_server_failure', error?.message ?? 'Could not create game.', 503)
   return { sessionToken: token, state: await publicState(created as unknown as SessionRow) }
 }
 
-async function submitGuess(body: Record<string, unknown>) {
+async function submitGuess(body: Record<string, unknown>, request: Request) {
   const token = requireString(body.sessionToken, 'session_token', 256)
   const guess = requireString(body.guess, 'guess', 32)
   const idempotencyKey = requireString(body.idempotencyKey, 'idempotency_key', 128)
   const expectedAttempt = body.expectedAttempt
   if (typeof expectedAttempt !== 'number' || !Number.isInteger(expectedAttempt) || expectedAttempt < 1 || expectedAttempt > 6) {
     throw new RequestError('invalid_attempt_sequence', 'The attempt sequence is invalid.', 400)
+  }
+
+  const session = await findSession(token)
+  if (session.mode === 'archive') {
+    const authUser = await requireConfirmedUser(request)
+    if (session.auth_user_id !== authUser.id) throw new RequestError('invalid_session', 'This archive session belongs to another account.', 401)
   }
 
   const { data, error } = await admin.rpc('wordle_submit_guess', {
@@ -273,9 +297,9 @@ async function submitGuess(body: Record<string, unknown>) {
   return { sessionToken: token, result: data }
 }
 
-async function listArchive(body: Record<string, unknown>) {
+async function listArchive(body: Record<string, unknown>, request: Request) {
   const currentDate = londonDate()
-  const browserIdHash = await hashOptionalIdentifier(body.browserId)
+  const authUser = await requireConfirmedUser(request)
   const { data: assignments, error: assignmentError } = await admin
     .from('wordle_daily_assignments')
     .select('london_date, wordle_words!inner(public_key)')
@@ -288,11 +312,11 @@ async function listArchive(body: Record<string, unknown>) {
 
   const dates = (assignments ?? []).map((assignment) => assignment.london_date)
   let sessions: Array<{ daily_date: string; status: SessionRow['status'] }> = []
-  if (browserIdHash && dates.length > 0) {
+  if (dates.length > 0) {
     const { data, error: sessionError } = await admin
       .from('wordle_game_sessions')
       .select('daily_date, status')
-      .eq('browser_id_hash', browserIdHash)
+      .eq('auth_user_id', authUser.id)
       .eq('mode', 'archive')
       .in('daily_date', dates)
 
@@ -317,9 +341,9 @@ async function handle(request: Request): Promise<Response> {
   try {
     const body = await readBody(request)
     const action = body.action
-    if (action === 'start') return json(await startSession(body))
-    if (action === 'archive-list') return json(await listArchive(body))
-    if (action === 'guess') return json(await submitGuess(body))
+    if (action === 'start') return json(await startSession(body, request))
+    if (action === 'archive-list') return json(await listArchive(body, request))
+    if (action === 'guess') return json(await submitGuess(body, request))
     throw new RequestError('invalid_action', 'The requested action is invalid.', 400)
   } catch (error) {
     if (error instanceof RequestError) return errorResponse(error.code, error.message, error.status)

@@ -15,13 +15,16 @@ import { createEmptySession, GameServiceError, listArchivePuzzles, startGame, su
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createShareText } from './game/share'
 import type { GameMode, GameSession, Stats, TileState } from './game/types'
+import { getAuthRedirectUrl, supabase } from './lib/supabase'
+import type { User } from '@supabase/supabase-js'
 
 const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
 const PRAISE = ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew']
 
 type Screen = 'play' | 'games' | 'archive'
-type Dialog = 'stats' | 'help' | 'settings' | null
+type Dialog = 'stats' | 'help' | 'settings' | 'account' | null
+type AuthMode = 'signin' | 'signup' | 'reset' | 'update'
 
 function App() {
   const [today, setToday] = useState(getLondonDate)
@@ -31,7 +34,16 @@ function App() {
   const [archivePuzzles, setArchivePuzzles] = useState<Awaited<ReturnType<typeof listArchivePuzzles>>>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState('')
+  const [archiveAuthRequired, setArchiveAuthRequired] = useState(false)
   const [dialog, setDialog] = useState<Dialog>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [authMode, setAuthMode] = useState<AuthMode>('signin')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+  const [isRecovery, setIsRecovery] = useState(false)
   const [stats, setStats] = useState<Stats>(() => loadStats())
   const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
@@ -101,6 +113,7 @@ function App() {
     let cancelled = false
     setArchiveLoading(true)
     setArchiveError('')
+    setArchiveAuthRequired(false)
     void listArchivePuzzles()
       .then((puzzles) => {
         if (cancelled) return
@@ -110,10 +123,31 @@ function App() {
       .catch((error: unknown) => {
         if (cancelled) return
         setArchiveLoading(false)
+        setArchiveAuthRequired(error instanceof GameServiceError && error.code === 'archive_auth_required')
         setArchiveError(error instanceof GameServiceError ? error.message : 'The archive could not be loaded.')
       })
     return () => { cancelled = true }
-  }, [screen])
+  }, [screen, user?.id])
+
+  useEffect(() => {
+    if (!supabase) return
+    let active = true
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active) setUser(data.session?.user ?? null)
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((event, sessionState) => {
+      setUser(sessionState?.user ?? null)
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovery(true)
+        setAuthMode('update')
+        setDialog('account')
+      }
+    })
+    return () => {
+      active = false
+      listener.subscription.unsubscribe()
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -324,6 +358,67 @@ function App() {
     setArchiveDate(null)
   }
 
+  function openAccount() {
+    setDialog('account')
+    setAuthError('')
+    setAuthNotice('')
+    if (!isRecovery) setAuthMode(user ? 'signin' : archiveAuthRequired ? 'signin' : authMode)
+  }
+
+  function changeAuthMode(nextMode: AuthMode) {
+    setAuthMode(nextMode)
+    setAuthError('')
+    setAuthNotice('')
+  }
+
+  async function submitAuth(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase || authBusy) return
+    setAuthBusy(true)
+    setAuthError('')
+    setAuthNotice('')
+
+    try {
+      if (authMode === 'reset') {
+        const { error } = await supabase.auth.resetPasswordForEmail(authEmail, { redirectTo: getAuthRedirectUrl() })
+        if (error) throw error
+        setAuthNotice('Check your inbox for a password reset link.')
+      } else if (authMode === 'update') {
+        const { error } = await supabase.auth.updateUser({ password: authPassword })
+        if (error) throw error
+        setIsRecovery(false)
+        setAuthMode('signin')
+        setAuthPassword('')
+        setAuthNotice('Password updated.')
+      } else if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+          options: { emailRedirectTo: getAuthRedirectUrl() },
+        })
+        if (error) throw error
+        if (data.session) setAuthNotice('Account created. Archive is ready.')
+        else setAuthNotice('Account created. Check your inbox to confirm your email.')
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
+        if (error) throw error
+        setAuthNotice('Signed in.')
+      }
+    } catch (error: unknown) {
+      setAuthError(error instanceof Error ? error.message : 'Authentication failed.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function signOut() {
+    if (!supabase) return
+    await supabase.auth.signOut()
+    setIsRecovery(false)
+    setDialog(null)
+    if (screen === 'archive') setScreen('games')
+  }
+
   function openArchivePuzzle(date: string) {
     setDialog(null)
     setArchiveDate(date)
@@ -383,6 +478,12 @@ function App() {
         </div>
         <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
         <div className="bar-right">
+          <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="8" r="3.2" /><path d="M5.5 20c.8-3.2 2.9-5 6.5-5s5.7 1.8 6.5 5" />
+            </svg>
+            {user && <i />}
+          </button>
           <button className="icon-button" type="button" aria-label="Statistics" onClick={() => setDialog('stats')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M4 20V4M4 7h11M4 12.5h15M4 18h8" />
@@ -464,7 +565,7 @@ function App() {
               <p>Past daily editions, separate from today’s streak.</p>
             </div>
             {archiveLoading && <p className="archive-status">Loading past editions…</p>}
-            {archiveError && <div className="error-bar" role="alert"><span>{archiveError}</span><button type="button" onClick={openArchive}>Retry</button></div>}
+            {archiveError && <div className="error-bar" role="alert"><span>{archiveError}</span>{archiveAuthRequired ? <button type="button" onClick={openAccount}>Sign in</button> : <button type="button" onClick={openArchive}>Retry</button>}</div>}
             {!archiveLoading && !archiveError && (
               <div className="archive-list">
                 {archivePuzzles.map((puzzle) => (
@@ -592,6 +693,67 @@ function App() {
           {statusMessage || ' '}
         </p>
       </div>
+
+      {dialog === 'account' && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDialog(null)}>
+          <div
+            className="modal account-modal"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-title"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button className="icon-button modal-close" type="button" aria-label="Close account" onClick={() => setDialog(null)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <h2 id="account-title">Account</h2>
+            {user && !isRecovery ? (
+              <div className="account-signed-in">
+                <p className="account-kicker">Signed in as</p>
+                <p className="account-email">{user.email}</p>
+                <p className="fine">Your confirmed account can access Archive. Daily and Unlimited remain available without signing in.</p>
+                <button className="primary-button" type="button" onClick={() => void signOut()}>Sign out</button>
+              </div>
+            ) : (
+              <>
+                <p className="account-intro">
+                  {authMode === 'reset' ? 'Reset your Dailo password.' : authMode === 'update' ? 'Choose a new password for your Dailo account.' : 'Sign in to play Archive and keep your account ready for future progress sync.'}
+                </p>
+                {authError && <p className="account-message account-message-error" role="alert">{authError}</p>}
+                {authNotice && <p className="account-message" role="status">{authNotice}</p>}
+                {supabase ? (
+                  <form className="account-form" onSubmit={(event) => void submitAuth(event)}>
+                    {authMode !== 'update' && (
+                      <label>
+                        Email
+                        <input type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} autoComplete="email" required />
+                      </label>
+                    )}
+                    {authMode !== 'reset' && (
+                      <label>
+                        Password
+                        <input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} autoComplete={authMode === 'signup' || authMode === 'update' ? 'new-password' : 'current-password'} required />
+                      </label>
+                    )}
+                    <button className="primary-button" type="submit" disabled={authBusy}>
+                      {authBusy ? 'Working…' : authMode === 'signup' ? 'Create account' : authMode === 'reset' ? 'Send reset link' : authMode === 'update' ? 'Update password' : 'Sign in'}
+                    </button>
+                  </form>
+                ) : (
+                  <p className="account-message account-message-error">Account services are not configured.</p>
+                )}
+                <div className="account-links">
+                  {authMode === 'signin' && <><button type="button" onClick={() => changeAuthMode('signup')}>Create account</button><button type="button" onClick={() => changeAuthMode('reset')}>Forgot password?</button></>}
+                  {authMode !== 'signin' && authMode !== 'update' && <button type="button" onClick={() => changeAuthMode('signin')}>Back to sign in</button>}
+                </div>
+                {authMode === 'signup' && <p className="fine account-note">We will email you a confirmation link before Archive becomes available.</p>}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {dialog === 'stats' && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDialog(null)}>
@@ -769,7 +931,7 @@ function App() {
               </button>
             </div>
 
-            <p className="fine" style={{ marginTop: 16 }}>No account, no email. Everything is stored on this device.</p>
+            <p className="fine" style={{ marginTop: 16 }}>Daily and Unlimited work without an account. Archive needs a confirmed email account.</p>
           </div>
         </div>
       )}

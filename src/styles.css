@@ -79,7 +79,7 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body { height: 100%; overflow-x: hidden; }
 
 body {
   margin: 0;
@@ -118,7 +118,7 @@ button { font: inherit; color: inherit; }
   flex: none;
 }
 
-.bar-left, .bar-right { display: flex; align-items: center; gap: 2px; }
+.bar-left, .bar-right { min-width: 0; display: flex; align-items: center; gap: 2px; }
 .bar-right { justify-content: flex-end; }
 
 .brand-stamp {
@@ -160,6 +160,8 @@ button { font: inherit; color: inherit; }
 }
 .icon-button svg { width: 22px; height: 22px; }
 .icon-button:hover { background: var(--key-bg); }
+.account-button { position: relative; }
+.account-button i { position: absolute; right: 6px; bottom: 6px; width: 6px; height: 6px; border: 1px solid var(--surface); border-radius: 50%; background: var(--correct); }
 
 .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
 
@@ -250,6 +252,22 @@ button { font: inherit; color: inherit; }
 .archive-row > span:last-child { color: var(--correct); font-size: 18px; text-align: right; }
 .archive-status { margin: 24px 0; color: var(--text-soft); text-align: center; }
 .archive-foot { margin: 20px 0 0; color: var(--text-soft); font-size: 12px; text-align: center; }
+
+.account-modal { max-width: 400px; }
+.account-intro { margin-top: -4px; color: var(--text-soft); text-align: center; }
+.account-form { display: grid; gap: 14px; margin-top: 18px; }
+.account-form label { display: grid; gap: 6px; color: var(--text-soft); font-size: 12px; font-weight: 700; }
+.account-form input { width: 100%; padding: 11px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-raised); color: var(--text); font: inherit; font-size: 14px; }
+.account-form input:focus { border-color: var(--correct); outline: 2px solid color-mix(in srgb, var(--correct) 25%, transparent); outline-offset: 1px; }
+.account-links { display: flex; justify-content: center; gap: 16px; margin-top: 16px; }
+.account-links button { padding: 0; border: 0; background: transparent; color: var(--text-soft); font-size: 12px; cursor: pointer; }
+.account-links button:hover { color: var(--text); text-decoration: underline; }
+.account-message { margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--correct) 12%, var(--surface)); font-size: 13px; text-align: center; }
+.account-message-error { border-color: color-mix(in srgb, var(--present) 60%, var(--line)); background: color-mix(in srgb, var(--present) 12%, var(--surface)); }
+.account-kicker { margin: 0; color: var(--text-soft); font-size: 12px; text-align: center; }
+.account-email { margin: 4px 0 14px; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; text-align: center; }
+.account-signed-in .primary-button { margin-top: 18px; }
+.account-note { margin-top: 16px; text-align: center; }
 
 /* ---------- board ---------- */
 

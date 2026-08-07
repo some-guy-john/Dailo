@@ -65,7 +65,7 @@ Submit a guess:
 }
 ```
 
-The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing and archive sessions are anonymous for now; authentication/access control is intentionally deferred.
+The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Daily and Unlimited remain anonymous.
 
 ## Content Import
 

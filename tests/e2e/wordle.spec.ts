@@ -186,6 +186,22 @@ test.describe('protected Wordo play', () => {
     await expect(page.locator('.app')).toHaveAttribute('data-contrast', 'on')
   })
 
+  test('opens the account dialog with sign-in and account creation paths', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Account' }).click()
+
+    const dialog = page.getByRole('dialog', { name: 'Account' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByLabel('Email')).toBeVisible()
+    await expect(dialog.getByLabel('Password')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Create account' }).click()
+    await expect(dialog.getByRole('button', { name: 'Create account', exact: true })).toBeVisible()
+    await expect(dialog.getByText('We will email you a confirmation link')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Back to sign in' }).click()
+    await dialog.getByRole('button', { name: 'Forgot password?' }).click()
+    await expect(dialog.getByRole('button', { name: 'Send reset link' })).toBeVisible()
+  })
+
   test('fits the game on a narrow phone viewport', async ({ browser }) => {
     const page = await browser.newPage({ viewport: { width: 320, height: 700 } })
     await page.goto('/')
