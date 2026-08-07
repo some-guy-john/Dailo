@@ -51,6 +51,7 @@ function App() {
   const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
   const [currentGuess, setCurrentGuess] = useState('')
+  const [pendingGuess, setPendingGuess] = useState('')
   const [notice, setNotice] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -197,6 +198,7 @@ function App() {
     setDailyNeedsAdvance(false)
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
+    setPendingGuess('')
     setNotice('')
     setRevealRow(-1)
     setSession(createEmptySession(mode, gameDate ?? today))
@@ -284,16 +286,19 @@ function App() {
       return
     }
 
+    const submittedGuess = currentGuess
     setIsSubmitting(true)
+    setPendingGuess(submittedGuess)
+    setCurrentGuess('')
 
     try {
-      const nextSession = await submitGuessToService(session, currentGuess)
+      const nextSession = await submitGuessToService(session, submittedGuess)
       const lastAttempt = nextSession.attempts[nextSession.attempts.length - 1]
       if (lastAttempt) setKeyboard((value) => mergeKeyboardState(value, lastAttempt.guess, lastAttempt.result))
       setRevealRow(nextSession.attempts.length - 1)
       setSession(nextSession)
       saveSession(nextSession)
-      setCurrentGuess('')
+      setPendingGuess('')
 
       if (nextSession.status === 'won' || nextSession.status === 'lost') {
         setStats((currentStats) => recordSession(currentStats, nextSession))
@@ -311,6 +316,8 @@ function App() {
         setNotice('')
       }
     } catch (error: unknown) {
+      setPendingGuess('')
+      setCurrentGuess(submittedGuess)
       const message = error instanceof GameServiceError ? error.message : 'The guess could not be submitted.'
       rejectGuess(message)
     } finally {
@@ -332,6 +339,7 @@ function App() {
     setSession(createEmptySession('unlimited', today))
     setKeyboard(EMPTY_KEYBOARD)
     setCurrentGuess('')
+    setPendingGuess('')
     setNotice('')
     setRevealRow(-1)
     void startGame('unlimited', stats, today, true)
@@ -340,6 +348,7 @@ function App() {
         saveSession(nextSession)
         setKeyboard(EMPTY_KEYBOARD)
         setCurrentGuess('')
+        setPendingGuess('')
         setIsLoading(false)
       })
       .catch((error: unknown) => {
@@ -647,7 +656,8 @@ function App() {
                 >
                   {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
                     const attempt = session.attempts[rowIndex]
-                    const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active'
+                    const isPendingRow = rowIndex === session.attempts.length && Boolean(pendingGuess)
+                    const isCurrentRow = rowIndex === session.attempts.length && session.status === 'active' && !pendingGuess
                     return (
                       <div
                         className="board-row"
@@ -656,7 +666,8 @@ function App() {
                         key={rowIndex}
                       >
                         {Array.from({ length: WORD_LENGTH }).map((__, letterIndex) => {
-                          const letter = attempt?.guess[letterIndex] ?? (isCurrentRow ? currentGuess[letterIndex] ?? '' : '')
+                          const letter = attempt?.guess[letterIndex]
+                            ?? (isPendingRow ? pendingGuess[letterIndex] ?? '' : isCurrentRow ? currentGuess[letterIndex] ?? '' : '')
                           const state = attempt?.result[letterIndex]
                           const stateLabel = state ?? 'empty'
                           return (
@@ -666,6 +677,7 @@ function App() {
                               style={{ '--tile-index': letterIndex } as React.CSSProperties}
                               data-state={state}
                               data-filled={letter && !state ? 'true' : undefined}
+                              data-pending={isPendingRow ? 'true' : undefined}
                               data-reveal={revealRow === rowIndex ? 'true' : undefined}
                               aria-label={`${letter || 'empty'}, ${stateLabel}`}
                             >

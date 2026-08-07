@@ -26,6 +26,42 @@ test.describe('protected Wordo play', () => {
     await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['A', 'A', 'L', 'I', 'I'])
   })
 
+  test('shows a submitted guess while the server verifies it', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action === 'start') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sessionToken: 'pending-guess-token',
+            state: { mode: 'daily', puzzleId: 'pending-guess-puzzle', date: '2026-08-08', status: 'active', attemptCount: 0, attempts: [], answer: null },
+          }),
+        })
+        return
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionToken: 'pending-guess-token',
+          result: {
+            status: 'active',
+            attemptCount: 1,
+            attempt: { guess: 'CRANE', result: ['absent', 'absent', 'absent', 'absent', 'absent'] },
+            answer: null,
+          },
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
+    await page.keyboard.type('CRANE')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.board-row').first().locator('.tile')).toHaveText(['C', 'R', 'A', 'N', 'E'])
+  })
+
   test('rejects a removed generated word without consuming a row', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('.board[data-ready="true"]')).toBeVisible()
