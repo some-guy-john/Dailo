@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "validate:content": "node scripts/validate-wordle-content.mjs",
+    "import:words": "node scripts/import-wordle-words.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

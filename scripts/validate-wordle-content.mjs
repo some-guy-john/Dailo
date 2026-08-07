@@ -2,13 +2,20 @@ import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
 const file = process.argv[2]
-if (!file) {
-  console.error('Usage: node scripts/validate-wordle-content.mjs <file.json>')
+if (!file || file.startsWith('-')) {
+  console.error('Usage: node scripts/validate-wordle-content.mjs <file.txt|file.json>')
   process.exit(1)
 }
 
-const source = JSON.parse(await readFile(file, 'utf8'))
-const words = Array.isArray(source) ? source : source.words
+const raw = await readFile(file, 'utf8')
+let words
+if (file.toLowerCase().endsWith('.json')) {
+  const source = JSON.parse(raw)
+  words = Array.isArray(source) ? source : source.words
+} else {
+  words = raw.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith('#'))
+}
+
 if (!Array.isArray(words) || words.length === 0) {
   throw new Error('Content must contain a non-empty words array.')
 }
