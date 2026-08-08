@@ -227,7 +227,12 @@ select throws_ok(
     gen_random_uuid(),
     date '2099-01-02',
     '["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"]'::jsonb,
-    '[{}, {}, {}, {}]'::jsonb
+    '[
+      {"key":"first","label":"First","difficulty":1,"words":["A","B","C","D"]},
+      {"key":"second","label":"Second","difficulty":2,"words":["E","F","G","H"]},
+      {"key":"third","label":"Third","difficulty":3,"words":["I","J","K","L"]},
+      {"key":"fourth","label":"Fourth","difficulty":4,"words":["M","N","O","P"]}
+    ]'::jsonb
   ) $$,
   '23503',
   null,
@@ -244,7 +249,12 @@ insert into public.connections_daily_puzzles (london_date, words, groups, status
 values (
   date '2099-01-03',
   '["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"]'::jsonb,
-  '[{}, {}, {}, {}]'::jsonb,
+  '[
+    {"key":"first","label":"First","difficulty":1,"words":["A","B","C","D"]},
+    {"key":"second","label":"Second","difficulty":2,"words":["E","F","G","H"]},
+    {"key":"third","label":"Third","difficulty":3,"words":["I","J","K","L"]},
+    {"key":"fourth","label":"Fourth","difficulty":4,"words":["M","N","O","P"]}
+  ]'::jsonb,
   'draft'
 );
 
