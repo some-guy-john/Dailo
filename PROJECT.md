@@ -847,9 +847,10 @@ The project should define:
 - A documented content backup process
 - A documented deployment rollback process
 - A simple service-health check
+- A documented monitoring and rate-limit maintenance process
 - A maximum acceptable monthly hosting budget
 
-The deployment workflow runs frontend tests, content validation, local PostgreSQL migration lint, pgTAP database assertions, browser tests, and the production build. Database migration parity is checked against the linked project before manual or release deployment.
+The deployment workflow runs frontend tests, content validation, local PostgreSQL migration lint, pgTAP database assertions, browser tests, and the production build. Database migration parity is checked against the linked project before manual or release deployment. The operational procedures are documented in `OPERATIONS.md`, including the non-mutating `npm run health:production` function check.
 
 Release 1 does not require a third-party analytics platform.
 
