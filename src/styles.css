@@ -284,7 +284,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------- board ---------- */
 
-.play-screen { justify-content: flex-start; }
+.play-screen { justify-content: safe center; }
 .mode-tabs { display: flex; justify-content: center; gap: 6px; padding: 10px 0 4px; flex: none; }
 .mode-tabs button {
   padding: 7px 15px;
@@ -348,7 +348,7 @@ button { font: inherit; color: inherit; }
 
 .keyboard {
   width: min(100%, 600px);
-  margin: 20px auto 0;
+  margin: 32px auto 0;
   display: grid;
   gap: 8px;
   padding: 0 14px 24px;
