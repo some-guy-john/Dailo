@@ -280,6 +280,12 @@ button { font: inherit; color: inherit; }
 .account-kicker { margin: 0; color: var(--text-soft); font-size: 12px; text-align: center; }
 .account-email { margin: 4px 0 14px; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; text-align: center; }
 .account-signed-in .primary-button { margin-top: 18px; }
+.account-history-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin: 18px 0 8px; }
+.account-history-summary div { display: grid; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; text-align: center; }
+.account-history-summary b { font-size: 19px; }
+.account-history-summary span { color: var(--text-soft); font-size: 10px; }
+.account-history-list { display: grid; margin-top: 10px; border-top: 1px solid var(--line); }
+.account-history-list div { display: flex; justify-content: space-between; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .account-note { margin-top: 16px; text-align: center; }
 
 /* ---------- board ---------- */

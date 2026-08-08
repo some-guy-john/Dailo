@@ -12,8 +12,8 @@ import {
   saveStats,
   saveTheme,
 } from './game/storage'
-import { createEmptySession, GameServiceError, getArchiveStats, getConnectionsArchiveStats, getConnectionsStats, listArchivePuzzles, listConnectionsArchive, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
-import type { ArchiveStats, ConnectionsArchiveStats, ConnectionsStats } from './game/service'
+import { createEmptySession, GameServiceError, getAccountHistory, getArchiveStats, getConnectionsArchiveStats, getConnectionsStats, listArchivePuzzles, listConnectionsArchive, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
+import type { AccountHistoryItem, ArchiveStats, ConnectionsArchiveStats, ConnectionsStats } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createConnectionsShareText, createShareText } from './game/share'
 import type { ConnectionsSession, GameMode, GameSession, Stats, TileState } from './game/types'
@@ -51,6 +51,8 @@ function App() {
   const [authNotice, setAuthNotice] = useState('')
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
+  const [accountHistory, setAccountHistory] = useState<AccountHistoryItem[]>([])
+  const [accountHistoryLoaded, setAccountHistoryLoaded] = useState(false)
   const [isRecovery, setIsRecovery] = useState(false)
   const [stats, setStats] = useState<Stats>(() => loadStats())
   const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
@@ -122,6 +124,8 @@ function App() {
   const displayedConnectionsWins = showingConnectionsArchiveStats ? connectionsArchiveStats.wins : connectionsWins
   const displayedConnectionsWinPercentage = displayedConnectionsPlayed === 0 ? 0 : Math.round((displayedConnectionsWins / displayedConnectionsPlayed) * 100)
   const displayedConnectionsDistribution = showingConnectionsArchiveStats ? connectionsArchiveStats.mistakeDistribution : connectionsMistakeDistribution
+  const cloudDaily = accountHistory.filter((item) => item.mode === 'daily')
+  const cloudUnlimited = accountHistory.filter((item) => item.mode === 'unlimited')
 
   useEffect(() => {
     if (!session.sessionToken) return
@@ -206,6 +210,13 @@ function App() {
       setConnectionsCloudStatsLoaded(true)
     }).catch(() => {
       if (!cancelled) setConnectionsCloudStatsLoaded(false)
+    })
+    void getAccountHistory().then((history) => {
+      if (cancelled) return
+      setAccountHistory(history)
+      setAccountHistoryLoaded(true)
+    }).catch(() => {
+      if (!cancelled) setAccountHistoryLoaded(false)
     })
     return () => { cancelled = true }
   }, [user?.id])
@@ -1021,7 +1032,16 @@ function App() {
               <div className="account-signed-in">
                 <p className="account-kicker">Signed in as</p>
                 <p className="account-email">{user.email}</p>
-                <p className="fine">Your confirmed account can access Archive. Daily and Unlimited remain available without signing in.</p>
+                <p className="fine">Verified current and future games sync to your account. Earlier browser-only results stay on this device.</p>
+                <div className="account-history-summary">
+                  <div><b>{accountHistoryLoaded ? cloudDaily.length : '…'}</b><span>Cloud Daily</span></div>
+                  <div><b>{accountHistoryLoaded ? cloudUnlimited.length : '…'}</b><span>Cloud Unlimited</span></div>
+                  <div><b>{Object.keys(stats.dailyResults).length}</b><span>Device Daily</span></div>
+                  <div><b>{stats.unlimitedResults.length}</b><span>Device Unlimited</span></div>
+                </div>
+                {accountHistoryLoaded && accountHistory.length > 0 && <div className="account-history-list">
+                  {accountHistory.slice(0, 5).map((item) => <div key={`${item.mode}:${item.completedAt}`}><span>{item.mode === 'daily' ? item.date : 'Unlimited'}</span><b>{item.won ? `${item.guesses}/6` : 'X/6'}</b></div>)}
+                </div>}
                 <button className="primary-button" type="button" onClick={() => void signOut()}>Sign out</button>
               </div>
             ) : (

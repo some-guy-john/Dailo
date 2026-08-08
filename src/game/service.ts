@@ -24,6 +24,7 @@ type BackendResponse = {
   }
   archives?: ArchivePuzzle[]
   archiveStats?: ArchiveStats
+  accountHistory?: AccountHistoryItem[]
   connections?: {
     state?: ConnectionsBackendState
     result?: ConnectionsBackendResult
@@ -68,6 +69,7 @@ export type ConnectionsStats = {
 
 export type ConnectionsArchivePuzzle = { date: string; puzzleId: string; status: 'active' | 'won' | 'lost' | null }
 export type ConnectionsArchiveStats = { played: number; wins: number; mistakeDistribution: number[] }
+export type AccountHistoryItem = { mode: 'daily' | 'unlimited'; date: string | null; puzzleId: string; won: boolean; guesses: number; completedAt: string }
 
 export const isProtectedBackendConfigured = Boolean(
   import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -249,6 +251,11 @@ export async function getArchiveStats(): Promise<ArchiveStats> {
 
   const response = await callBackend({ action: 'archive-stats' })
   return response.archiveStats ?? { played: 0, wins: 0, distribution: [] }
+}
+
+export async function getAccountHistory(): Promise<AccountHistoryItem[]> {
+  const response = await callBackend({ action: 'account-history' })
+  return response.accountHistory ?? []
 }
 
 export async function submitGuess(session: GameSession, rawGuess: string): Promise<GameSession> {

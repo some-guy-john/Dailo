@@ -354,7 +354,7 @@ async function startSession(body: Record<string, unknown>, request: Request) {
     throw new RequestError('invalid_mode', 'The game mode is invalid.', 400)
   }
 
-  const authUser = mode === 'archive' ? await requireConfirmedUser(request) : null
+  const authUser = mode === 'archive' ? await requireConfirmedUser(request) : await optionalConfirmedUser(request)
 
   const providedToken = body.sessionToken
   if (providedToken !== undefined && providedToken !== null && providedToken !== '') {
@@ -363,6 +363,12 @@ async function startSession(body: Record<string, unknown>, request: Request) {
     if (session.mode !== mode) throw new RequestError('invalid_session', 'This session belongs to another mode.', 409)
     if (session.mode === 'archive') {
       if (session.auth_user_id !== authUser?.id) throw new RequestError('invalid_session', 'This archive session belongs to another account.', 401)
+    } else if (session.auth_user_id && session.auth_user_id !== authUser?.id) {
+      throw new RequestError('invalid_session', 'This game session belongs to another account.', 401)
+    } else if (authUser && !session.auth_user_id) {
+      const { error: claimError } = await admin.from('wordle_game_sessions').update({ auth_user_id: authUser.id }).eq('id', session.id).is('auth_user_id', null)
+      if (claimError) throw new RequestError('temporary_server_failure', claimError.message, 503)
+      session.auth_user_id = authUser.id
     }
 
     if (session.status === 'active' && new Date(session.expires_at) < new Date()) {
@@ -379,6 +385,21 @@ async function startSession(body: Record<string, unknown>, request: Request) {
 
   if (mode === 'daily') {
     dailyDate = londonDate()
+
+    if (authUser) {
+      const { data: owned, error: ownedError } = await admin.from('wordle_game_sessions')
+        .select('id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
+        .eq('auth_user_id', authUser.id).eq('daily_date', dailyDate).eq('mode', 'daily').maybeSingle()
+      if (ownedError) throw new RequestError('temporary_server_failure', ownedError.message, 503)
+      if (owned) {
+        const replacementToken = createSessionToken()
+        const replacementHash = await hashToken(replacementToken)
+        const { error: replaceError } = await admin.from('wordle_game_sessions').update({ token_hash: replacementHash, browser_id_hash: browserIdHash }).eq('id', owned.id)
+        if (replaceError) throw new RequestError('temporary_server_failure', replaceError.message, 503)
+        owned.token_hash = replacementHash
+        return { sessionToken: replacementToken, state: await publicState(owned as unknown as SessionRow) }
+      }
+    }
 
     if (browserIdHash) {
       const { data: existingSession, error: existingSessionError } = await admin
@@ -529,6 +550,10 @@ async function submitGuess(body: Record<string, unknown>, request: Request) {
     const authUser = await requireConfirmedUser(request)
     if (session.auth_user_id !== authUser.id) throw new RequestError('invalid_session', 'This archive session belongs to another account.', 401)
   }
+  if (session.auth_user_id && session.mode !== 'archive') {
+    const authUser = await optionalConfirmedUser(request)
+    if (authUser?.id !== session.auth_user_id) throw new RequestError('invalid_session', 'This game session belongs to another account.', 401)
+  }
 
   const { data, error } = await admin.rpc('wordle_submit_guess', {
     p_token_hash: await hashToken(token),
@@ -615,6 +640,19 @@ async function archiveStats(request: Request) {
   return { archiveStats: { played: sessions?.length ?? 0, wins, distribution } }
 }
 
+async function accountHistory(request: Request) {
+  const authUser = await requireConfirmedUser(request)
+  const { data, error } = await admin.from('wordle_game_sessions')
+    .select('mode, daily_date, status, attempt_count, completed_at, wordle_words!inner(public_key)')
+    .eq('auth_user_id', authUser.id).in('mode', ['daily', 'unlimited']).in('status', ['won', 'lost'])
+    .order('completed_at', { ascending: false }).limit(500)
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  return { accountHistory: (data ?? []).map((session) => ({
+    mode: session.mode, date: session.daily_date, puzzleId: (session.wordle_words as { public_key: string }).public_key,
+    won: session.status === 'won', guesses: session.attempt_count, completedAt: session.completed_at,
+  })) }
+}
+
 async function handle(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return errorResponse('method_not_allowed', 'Use POST for this endpoint.', 405)
@@ -630,6 +668,7 @@ async function handle(request: Request): Promise<Response> {
     if (action === 'connections-archive-stats') return json(await connectionsArchiveStats(request))
     if (action === 'archive-list') return json(await listArchive(body, request))
     if (action === 'archive-stats') return json(await archiveStats(request))
+    if (action === 'account-history') return json(await accountHistory(request))
     if (action === 'guess') return json(await submitGuess(body, request))
     throw new RequestError('invalid_action', 'The requested action is invalid.', 400)
   } catch (error) {

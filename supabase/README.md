@@ -108,6 +108,10 @@ Matches activate only after the second player claims the invitation. Both player
 
 Versus answers are selected from active curated answers after excluding all draft and published Daily assignments. Match, player, and attempt tables deny direct browser access, while atomic lifecycle RPCs are executable only by the service role.
 
+## Account History
+
+Confirmed users may retrieve `account-history`, which is derived from completed server sessions owned by their account. Daily and Unlimited sessions remain anonymously playable. A session is linked to an account only when it is created while authenticated or when the signed-in player proves possession of its existing opaque token. Browser-only summaries are displayed separately and are never uploaded as authoritative history.
+
 ## Content Import
 
 Validate a JSON file before import:
