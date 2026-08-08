@@ -1,6 +1,6 @@
-# Dailo / Wordo Supabase Setup
+# Dailo Games Supabase Setup
 
-The Dailo Release 1 backend keeps Wordo answers behind the Supabase database and Edge Function. The public app must not ship the answer bank or the current answer in its JavaScript bundle.
+The Dailo Release 1 backend keeps Wordo answers and Connections group data behind the Supabase database and Edge Function. The public app must not ship answer data or unsolved Connections groups in its JavaScript bundle.
 
 ## Local Setup
 
@@ -9,8 +9,9 @@ The Dailo Release 1 backend keeps Wordo answers behind the Supabase database and
 3. Apply the SQL migration in `migrations/`.
 4. Import reviewed Wordo content into `wordle_words`.
 5. Add published rows to `wordle_daily_assignments` using `Europe/London` calendar dates.
-6. Deploy `functions/wordle`.
-7. Configure the frontend with the public Supabase URL and anon key only.
+6. Add published Connections rows to `connections_daily_puzzles` using `Europe/London` calendar dates.
+7. Deploy `functions/wordle`.
+8. Configure the frontend with the public Supabase URL and anon key only.
 
 The Edge Function uses `SUPABASE_SERVICE_ROLE_KEY` server-side. Never put that value in the frontend, repository, or issue tracker.
 
@@ -67,7 +68,30 @@ Submit a guess:
 }
 ```
 
-The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Authenticated Archive sessions can be resumed across devices. Daily and Unlimited remain anonymous.
+The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Authenticated Archive sessions can be resumed across devices. Daily, Unlimited, and Connections remain anonymous.
+
+Connections start:
+
+```json
+{
+  "action": "connections-start",
+  "sessionToken": "optional-existing-token",
+  "browserId": "optional-local-identifier"
+}
+```
+
+Connections submission:
+
+```json
+{
+  "action": "connections-submit",
+  "sessionToken": "opaque-session-token",
+  "words": ["APPLE", "MANGO", "PEAR", "PLUM"],
+  "idempotencyKey": "unique-request-id"
+}
+```
+
+Connections returns the 16 playable words and solved groups, but does not return unsolved group labels or memberships until the puzzle is complete. A player has four mistakes.
 
 ## Content Import
 

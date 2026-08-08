@@ -24,6 +24,26 @@ type AttemptRow = {
   tile_result: string[]
 }
 
+type ConnectionsGroup = {
+  key: string
+  label: string
+  words: string[]
+}
+
+type ConnectionsSessionRow = {
+  id: string
+  token_hash: string
+  browser_id_hash: string | null
+  puzzle_id: string
+  london_date: string
+  status: 'active' | 'won' | 'lost' | 'expired'
+  mistake_count: number
+  solved_groups: string[]
+  started_at: string
+  completed_at: string | null
+  expires_at: string
+}
+
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -99,6 +119,135 @@ async function publicState(session: SessionRow) {
   }
 
   return state
+}
+
+async function connectionsState(session: ConnectionsSessionRow) {
+  const [{ data: puzzle, error: puzzleError }, { data: attempts, error: attemptsError }] = await Promise.all([
+    admin.from('connections_daily_puzzles').select('public_key, london_date, words, groups').eq('id', session.puzzle_id).single(),
+    admin.from('connections_attempts').select('selected_words, result, group_data').eq('session_id', session.id).order('sequence_number', { ascending: true }),
+  ])
+
+  if (puzzleError || attemptsError || !puzzle) {
+    throw new RequestError('temporary_server_failure', puzzleError?.message ?? attemptsError?.message ?? 'Connections puzzle unavailable.', 503)
+  }
+
+  const groups = puzzle.groups as ConnectionsGroup[]
+  const solvedKeys = session.solved_groups ?? []
+  const solvedGroups = groups.filter((group) => solvedKeys.includes(group.key))
+  const revealAll = session.status === 'won' || session.status === 'lost' || session.status === 'expired'
+  return {
+    puzzleId: puzzle.public_key,
+    date: puzzle.london_date,
+    words: puzzle.words,
+    solvedGroups: revealAll ? groups : solvedGroups,
+    attempts: (attempts ?? []).map((attempt) => ({
+      words: attempt.selected_words,
+      result: attempt.result,
+      group: attempt.group_data ?? undefined,
+    })),
+    mistakeCount: session.mistake_count,
+    maxMistakes: 4,
+    status: session.status,
+  }
+}
+
+async function startConnections(body: Record<string, unknown>) {
+  const currentDate = londonDate()
+  const providedToken = body.sessionToken
+  if (typeof providedToken === 'string' && providedToken.length > 0) {
+    const tokenHash = await hashToken(providedToken)
+    const { data: session, error } = await admin
+      .from('connections_game_sessions')
+      .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+      .eq('token_hash', tokenHash)
+      .maybeSingle()
+    if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+    if (session) return { sessionToken: providedToken, connections: { state: await connectionsState(session as ConnectionsSessionRow) } }
+  }
+
+  const browserIdHash = await hashOptionalIdentifier(body.browserId)
+  if (browserIdHash) {
+    const { data: existing, error } = await admin
+      .from('connections_game_sessions')
+      .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+      .eq('browser_id_hash', browserIdHash)
+      .eq('london_date', currentDate)
+      .maybeSingle()
+    if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+    if (existing) throw new RequestError('connections_already_started', 'This browser already has today’s Connections puzzle.', 409)
+  }
+
+  const { data: puzzle, error: puzzleError } = await admin
+    .from('connections_daily_puzzles')
+    .select('id')
+    .eq('london_date', currentDate)
+    .eq('status', 'published')
+    .maybeSingle()
+  if (puzzleError) throw new RequestError('temporary_server_failure', puzzleError.message, 503)
+  if (!puzzle) throw new RequestError('missing_connections_assignment', 'Today’s Connections puzzle is not available yet.', 503)
+
+  const token = createSessionToken()
+  const tokenHash = await hashToken(token)
+  const { data: created, error } = await admin
+    .from('connections_game_sessions')
+    .insert({
+      token_hash: tokenHash,
+      browser_id_hash: browserIdHash,
+      puzzle_id: puzzle.id,
+      london_date: currentDate,
+      expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 8).toISOString(),
+    })
+    .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+    .single()
+  if (error || !created) throw new RequestError('temporary_server_failure', error?.message ?? 'Could not create Connections game.', 503)
+  return { sessionToken: token, connections: { state: await connectionsState(created as ConnectionsSessionRow) } }
+}
+
+async function submitConnections(body: Record<string, unknown>) {
+  const token = requireString(body.sessionToken, 'session_token', 256)
+  const selectedWords = body.words
+  const idempotencyKey = requireString(body.idempotencyKey, 'idempotency_key', 128)
+  if (!Array.isArray(selectedWords) || selectedWords.length !== 4 || selectedWords.some((word) => typeof word !== 'string')) {
+    throw new RequestError('invalid_selection', 'Select four different words.', 422)
+  }
+
+  const session = await findConnectionsSession(token)
+  const { data, error } = await admin.rpc('connections_submit_guess', {
+    p_token_hash: await hashToken(token),
+    p_selected_words: selectedWords,
+    p_idempotency_key: idempotencyKey,
+  })
+  if (error) {
+    const knownErrors: Record<string, [string, number]> = {
+      invalid_session: ['This Connections session is not valid.', 401],
+      expired_session: ['This Connections session has expired.', 410],
+      invalid_selection: ['Select four different words.', 422],
+      group_already_solved: ['That group has already been found.', 422],
+      game_already_complete: ['This Connections puzzle is already complete.', 409],
+      puzzle_unavailable: ['This puzzle is temporarily unavailable.', 503],
+    }
+    const [message, status] = knownErrors[error.message] ?? ['The selection could not be checked.', 503]
+    throw new RequestError(error.message, message, status)
+  }
+  const latest = await findConnectionsSession(token)
+  return {
+    sessionToken: token,
+    connections: {
+      result: data,
+      state: await connectionsState(latest),
+    },
+  }
+}
+
+async function findConnectionsSession(token: string): Promise<ConnectionsSessionRow> {
+  const { data, error } = await admin
+    .from('connections_game_sessions')
+    .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+    .eq('token_hash', await hashToken(token))
+    .maybeSingle()
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  if (!data) throw new RequestError('invalid_session', 'This Connections session is not valid.', 401)
+  return data as ConnectionsSessionRow
 }
 
 async function startSession(body: Record<string, unknown>, request: Request) {
@@ -376,6 +525,8 @@ async function handle(request: Request): Promise<Response> {
     const body = await readBody(request)
     const action = body.action
     if (action === 'start') return json(await startSession(body, request))
+    if (action === 'connections-start') return json(await startConnections(body))
+    if (action === 'connections-submit') return json(await submitConnections(body))
     if (action === 'archive-list') return json(await listArchive(body, request))
     if (action === 'archive-stats') return json(await archiveStats(request))
     if (action === 'guess') return json(await submitGuess(body, request))

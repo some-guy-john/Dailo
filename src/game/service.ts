@@ -1,7 +1,7 @@
 import { isGuessFormatValid, normalizeGuess } from './rules'
-import { loadBrowserId, loadSession } from './storage'
+import { loadBrowserId, loadConnectionsSession, loadSession } from './storage'
 import { supabase } from '../lib/supabase'
-import type { GameMode, GameSession, Stats } from './types'
+import type { ConnectionsAttempt, ConnectionsGroup, ConnectionsSession, GameMode, GameSession, Stats } from './types'
 
 type BackendState = {
   mode: GameMode
@@ -24,7 +24,28 @@ type BackendResponse = {
   }
   archives?: ArchivePuzzle[]
   archiveStats?: ArchiveStats
+  connections?: {
+    state?: ConnectionsBackendState
+    result?: ConnectionsBackendResult
+  }
   error?: { code: string; message: string }
+}
+
+type ConnectionsBackendState = {
+  puzzleId: string
+  date: string
+  words: string[]
+  solvedGroups: ConnectionsGroup[]
+  attempts: ConnectionsAttempt[]
+  mistakeCount: number
+  maxMistakes: number
+  status: ConnectionsSession['status']
+}
+
+type ConnectionsBackendResult = {
+  result: ConnectionsAttempt['result']
+  group?: ConnectionsGroup
+  state: ConnectionsBackendState
 }
 
 export type ArchivePuzzle = {
@@ -58,6 +79,21 @@ export function createEmptySession(mode: GameMode, date: string): GameSession {
     attempts: [],
     status: 'active',
     startedAt: new Date().toISOString(),
+  }
+}
+
+function fromConnectionsState(state: ConnectionsBackendState, sessionToken: string, previous?: ConnectionsSession): ConnectionsSession {
+  return {
+    puzzleId: state.puzzleId,
+    date: state.date,
+    sessionToken,
+    words: state.words,
+    solvedGroups: state.solvedGroups,
+    attempts: state.attempts,
+    mistakeCount: state.mistakeCount,
+    maxMistakes: state.maxMistakes,
+    status: state.status,
+    startedAt: previous?.startedAt ?? new Date().toISOString(),
   }
 }
 
@@ -123,6 +159,40 @@ export async function startGame(mode: GameMode, stats: Stats, date: string, forc
     throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete game.')
   }
   return fromBackendState(response.state, response.sessionToken, saved ?? undefined)
+}
+
+export async function startConnections(date: string, forceNew = false): Promise<ConnectionsSession> {
+  const saved = forceNew ? null : loadConnectionsSession(date)
+  if (!isProtectedBackendConfigured) {
+    throw new GameServiceError('configuration_missing', 'Connect Supabase before starting Connections.')
+  }
+
+  const response = await callBackend({
+    action: 'connections-start',
+    sessionToken: saved?.sessionToken,
+    browserId: loadBrowserId(),
+  })
+  if (!response.connections?.state || !response.sessionToken) {
+    throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete Connections puzzle.')
+  }
+  return fromConnectionsState(response.connections.state, response.sessionToken, saved ?? undefined)
+}
+
+export async function submitConnections(session: ConnectionsSession, words: string[]): Promise<{ session: ConnectionsSession; result: ConnectionsBackendResult }> {
+  if (!session.sessionToken) throw new GameServiceError('invalid_session', 'This Connections session is not valid.')
+  const response = await callBackend({
+    action: 'connections-submit',
+    sessionToken: session.sessionToken,
+    words,
+    idempotencyKey: crypto.randomUUID(),
+  })
+  if (!response.connections?.state || !response.connections.result) {
+    throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete Connections result.')
+  }
+  return {
+    session: fromConnectionsState(response.connections.state, session.sessionToken, session),
+    result: response.connections.result,
+  }
 }
 
 export async function listArchivePuzzles(): Promise<ArchivePuzzle[]> {

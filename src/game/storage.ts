@@ -1,10 +1,11 @@
-import type { GameMode, GameSession, Stats } from './types'
+import type { ConnectionsSession, GameMode, GameSession, Stats } from './types'
 import { EMPTY_STATS } from './stats'
 
 const statsKey = 'dailies:stats:v1'
 const themeKey = 'dailies:theme:v1'
 const prefsKey = 'dailies:prefs:v1'
 const browserIdKey = 'dailies:browser-id:v1'
+const connectionsSessionKey = 'dailies:connections-session:v1'
 
 export type Preferences = {
   highContrast: boolean
@@ -56,6 +57,15 @@ export function loadSession(mode: GameMode, date: string | null): GameSession | 
 
 export function saveSession(session: GameSession): void {
   write(getSessionKey(session.mode, session.date), session)
+}
+
+export function loadConnectionsSession(date: string): ConnectionsSession | null {
+  const session = read<ConnectionsSession>(connectionsSessionKey)
+  return session?.date === date ? session : null
+}
+
+export function saveConnectionsSession(session: ConnectionsSession): void {
+  write(connectionsSessionKey, session)
 }
 
 export function loadTheme(): 'system' | 'light' | 'dark' {

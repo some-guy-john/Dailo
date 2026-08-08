@@ -2,6 +2,8 @@ export type TileState = 'empty' | 'correct' | 'present' | 'absent'
 
 export type GameMode = 'daily' | 'unlimited' | 'archive'
 
+export type GameId = 'wordo' | 'connections'
+
 export type GameStatus = 'active' | 'won' | 'lost'
 
 export type GuessResult = TileState[]
@@ -47,4 +49,29 @@ export type Stats = {
   unlimitedResults: UnlimitedResult[]
   archiveResults: ArchiveResult[]
   recentUnlimitedPuzzleIds: string[]
+}
+
+export type ConnectionsGroup = {
+  key: string
+  label: string
+  words: string[]
+}
+
+export type ConnectionsAttempt = {
+  words: string[]
+  result: 'correct' | 'one-away' | 'incorrect'
+  group?: ConnectionsGroup
+}
+
+export type ConnectionsSession = {
+  puzzleId: string
+  date: string
+  sessionToken?: string
+  words: string[]
+  solvedGroups: ConnectionsGroup[]
+  attempts: ConnectionsAttempt[]
+  mistakeCount: number
+  maxMistakes: number
+  status: 'active' | 'won' | 'lost'
+  startedAt: string
 }

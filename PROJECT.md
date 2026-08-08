@@ -2,9 +2,9 @@
 
 ## Document Status
 
-This document defines the product and technical requirements for the first public release of **Dailo**. The first game is **Wordo**; technical compatibility names such as `wordle_words` and the `wordle` Edge Function are intentionally retained in the backend.
+This document defines the product and technical requirements for the first public release of **Dailo**. The first games are **Wordo** and **Connections**; technical compatibility names such as `wordle_words` and the `wordle` Edge Function are intentionally retained in the backend.
 
-Release 1 is intentionally limited to a polished five-letter word game with:
+Release 1 is intentionally limited to polished daily puzzle games with:
 
 - One shared daily puzzle
 - Curated unlimited puzzles
@@ -12,8 +12,9 @@ Release 1 is intentionally limited to a polished five-letter word game with:
 - Confirmed-account archive replay for published past editions
 - Responsive and accessible play
 - Server-side protection of puzzle answers
+- Four-group Connections puzzles with protected group data
 
-Full account-backed history, multiplayer, crosswords, Connections, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1. Archive access uses a confirmed email/password account, while Daily and Unlimited remain anonymous.
+Full account-backed history, multiplayer, crosswords, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1. Archive access uses a confirmed email/password account, while Daily, Unlimited, and Connections remain anonymous.
 
 ---
 
@@ -21,7 +22,7 @@ Full account-backed history, multiplayer, crosswords, Connections, public profil
 
 **Dailo** is a lightweight web platform for daily and replayable word and puzzle games.
 
-The first public release contains only the five-letter Wordo game. The product should feel complete and reliable on phones and desktop browsers before additional games or social features are considered.
+The first public release contains Wordo and Connections. Both games should feel complete and reliable on phones and desktop browsers before additional games or social features are considered.
 
 ### Current Implementation
 
@@ -29,11 +30,13 @@ The deployed Release 1 experience includes:
 
 - Dailo games hub and shared navigation shell
 - Wordo Daily and Wordo Unlimited modes
+- Daily Connections mode with four hidden groups of four words
 - Confirmed-account Wordo Archive browsing for published past editions
 - Supabase email/password accounts for Archive access, including email confirmation and password recovery
 - Cross-device resume for authenticated Archive sessions
 - Server-synced Archive play statistics
 - Protected Supabase sessions and server-authoritative guesses
+- Protected Connections sessions and server-authoritative group submissions
 - London-time daily rollover handling
 - Browser-local stats, streaks, preferences, and refresh recovery
 - Responsive mobile and desktop layout with reduced-motion and high-contrast options
@@ -61,6 +64,7 @@ Release 1 includes:
 
 - Daily Wordo
 - Wordo Unlimited
+- Daily Connections
 - A shared game shell and navigation
 - On-screen and physical-keyboard input
 - Mobile and desktop layouts
@@ -91,7 +95,6 @@ Release 1 does not include:
 - Chat
 - User-created puzzles
 - Crosswords
-- Connections
 - A graphical admin panel
 - Advertising
 - Analytics

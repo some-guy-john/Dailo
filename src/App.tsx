@@ -6,16 +6,17 @@ import {
   loadPreferences,
   loadStats,
   loadTheme,
+  saveConnectionsSession,
   savePreferences,
   saveSession,
   saveStats,
   saveTheme,
 } from './game/storage'
-import { createEmptySession, GameServiceError, getArchiveStats, listArchivePuzzles, startGame, submitGuess as submitGuessToService } from './game/service'
+import { createEmptySession, GameServiceError, getArchiveStats, listArchivePuzzles, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
 import type { ArchiveStats } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createShareText } from './game/share'
-import type { GameMode, GameSession, Stats, TileState } from './game/types'
+import type { ConnectionsSession, GameMode, GameSession, Stats, TileState } from './game/types'
 import { getAuthRedirectUrl, supabase } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -23,7 +24,7 @@ const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
 const PRAISE = ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew']
 
-type Screen = 'play' | 'games' | 'archive'
+type Screen = 'play' | 'games' | 'archive' | 'connections'
 type Dialog = 'stats' | 'help' | 'settings' | 'account' | null
 type AuthMode = 'signin' | 'signup' | 'reset' | 'update'
 
@@ -49,6 +50,11 @@ function App() {
   const [isRecovery, setIsRecovery] = useState(false)
   const [stats, setStats] = useState<Stats>(() => loadStats())
   const [session, setSession] = useState<GameSession>(() => createEmptySession('daily', today))
+  const [connectionsSession, setConnectionsSession] = useState<ConnectionsSession | null>(null)
+  const [connectionsSelected, setConnectionsSelected] = useState<string[]>([])
+  const [connectionsNotice, setConnectionsNotice] = useState('')
+  const [connectionsLoading, setConnectionsLoading] = useState(false)
+  const [connectionsSubmitting, setConnectionsSubmitting] = useState(false)
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
   const [currentGuess, setCurrentGuess] = useState('')
   const [pendingGuess, setPendingGuess] = useState('')
@@ -231,6 +237,27 @@ function App() {
   }, [mode, today, archiveDate, reloadKey, screen])
 
   useEffect(() => {
+    if (screen !== 'connections') return
+    let cancelled = false
+    setConnectionsLoading(true)
+    setConnectionsSelected([])
+    setConnectionsNotice('')
+    void startConnections(today)
+      .then((nextSession) => {
+        if (cancelled) return
+        setConnectionsSession(nextSession)
+        saveConnectionsSession(nextSession)
+        setConnectionsLoading(false)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setConnectionsLoading(false)
+        setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections could not be loaded.')
+      })
+    return () => { cancelled = true }
+  }, [screen, today])
+
+  useEffect(() => {
     if (!dialog) return
     dialogRef.current?.focus()
   }, [dialog])
@@ -396,6 +423,37 @@ function App() {
     setArchiveDate(null)
   }
 
+  function openConnections() {
+    setDialog(null)
+    setScreen('connections')
+  }
+
+  function toggleConnectionsWord(word: string) {
+    if (!connectionsSession || connectionsSession.status !== 'active' || connectionsSubmitting) return
+    setConnectionsNotice('')
+    setConnectionsSelected((selected) => selected.includes(word)
+      ? selected.filter((value) => value !== word)
+      : selected.length < 4 ? [...selected, word] : selected)
+  }
+
+  async function submitConnectionsSelection() {
+    if (!connectionsSession || connectionsSelected.length !== 4 || connectionsSubmitting) return
+    setConnectionsSubmitting(true)
+    try {
+      const response = await submitConnections(connectionsSession, connectionsSelected)
+      setConnectionsSession(response.session)
+      saveConnectionsSession(response.session)
+      setConnectionsSelected([])
+      setConnectionsNotice(response.result.result === 'correct'
+        ? `Group found${response.result.group ? `: ${response.result.group.label}` : ''}`
+        : response.result.result === 'one-away' ? 'One away' : 'Not quite')
+    } catch (error: unknown) {
+      setConnectionsNotice(error instanceof GameServiceError ? error.message : 'The selection could not be checked.')
+    } finally {
+      setConnectionsSubmitting(false)
+    }
+  }
+
   function openAccount() {
     setDialog('account')
     setAuthError('')
@@ -514,7 +572,7 @@ function App() {
             </svg>
           </button>
         </div>
-        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : 'Wordo'}</h1>
+        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : screen === 'connections' ? 'Connections' : 'Wordo'}</h1>
         <div className="bar-right">
           <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -578,19 +636,69 @@ function App() {
                 <span className="game-go">Browse</span>
               </button>
 
-              <div className="game-row" data-locked="true">
+              <button className="game-row" type="button" onClick={openConnections}>
                 <span className="game-thumb" aria-hidden="true"><i /><i /><i /><i /></span>
                 <span>
                   <b>Connections</b>
                   <span className="game-note">Group the words into four</span>
                 </span>
-                <span className="game-go">Soon</span>
-              </div>
+                <span className="game-go">Play</span>
+              </button>
             </div>
 
             <p className="hub-foot">
               Current streak <b>{currentStreak}</b> · Next puzzle in <b>{dailyCountdown}</b>
             </p>
+          </div>
+        </section>
+      ) : screen === 'connections' ? (
+        <section className="screen connections-screen" aria-label="Connections game">
+          <div className="connections-game">
+            <div className="connections-heading">
+              <span>Word groups</span>
+              <h2>Connections</h2>
+              <p>Find four groups of four. You have four mistakes.</p>
+            </div>
+            {connectionsLoading && <p className="connections-status">Loading today’s puzzle…</p>}
+            {!connectionsLoading && connectionsSession && (
+              <>
+                <div className="connections-mistakes" aria-label={`${connectionsSession.mistakeCount} of ${connectionsSession.maxMistakes} mistakes used`}>
+                  {Array.from({ length: connectionsSession.maxMistakes }).map((_, index) => <i data-used={index < connectionsSession.mistakeCount} key={index} />)}
+                </div>
+                <div className="connections-groups">
+                  {connectionsSession.solvedGroups.map((group) => (
+                    <div className="connections-group" key={group.key}>
+                      <strong>{group.label}</strong>
+                      <span>{group.words.join(' · ')}</span>
+                    </div>
+                  ))}
+                </div>
+                {connectionsSession.status === 'active' ? (
+                  <>
+                    <div className="connections-grid">
+                      {shuffleConnectionsWords(connectionsSession.words, connectionsSession.puzzleId)
+                        .filter((word) => !connectionsSession.solvedGroups.some((group) => group.words.includes(word)))
+                        .map((word) => (
+                          <button className="connections-word" data-selected={connectionsSelected.includes(word)} type="button" key={word} onClick={() => toggleConnectionsWord(word)}>
+                            {word}
+                          </button>
+                        ))}
+                    </div>
+                    <div className="connections-actions">
+                      <button className="secondary-button" type="button" onClick={() => setConnectionsSelected([])} disabled={connectionsSelected.length === 0}>Clear</button>
+                      <button className="primary-button" type="button" onClick={() => void submitConnectionsSelection()} disabled={connectionsSelected.length !== 4 || connectionsSubmitting}>Submit</button>
+                    </div>
+                    {connectionsNotice && <p className="connections-feedback" role="status">{connectionsNotice}</p>}
+                  </>
+                ) : (
+                  <div className="connections-finished" role="status">
+                    <strong>{connectionsSession.status === 'won' ? 'All groups found.' : 'The groups were hiding well.'}</strong>
+                    <span>{connectionsSession.mistakeCount} of {connectionsSession.maxMistakes} mistakes used.</span>
+                  </div>
+                )}
+              </>
+            )}
+            {!connectionsLoading && !connectionsSession && connectionsNotice && <div className="error-bar" role="alert">{connectionsNotice}</div>}
           </div>
         </section>
       ) : screen === 'archive' ? (
@@ -1015,6 +1123,13 @@ function groupArchivePuzzles(puzzles: Awaited<ReturnType<typeof listArchivePuzzl
     else groups.push({ label, puzzles: [puzzle] })
   })
   return groups
+}
+
+function shuffleConnectionsWords(words: string[], puzzleId: string): string[] {
+  return [...words].sort((left, right) => {
+    const score = (word: string) => Array.from(`${puzzleId}${word}`).reduce((total, character) => total * 31 + character.charCodeAt(0), 7)
+    return score(left) - score(right)
+  })
 }
 
 export default App

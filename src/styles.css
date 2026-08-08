@@ -297,6 +297,31 @@ button { font: inherit; color: inherit; }
   letter-spacing: 0.04em;
   cursor: pointer;
 }
+
+.connections-game { width: min(100%, 620px); margin: 0 auto; padding: 30px 20px 48px; }
+.connections-heading { text-align: center; }
+.connections-heading > span { color: var(--present); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.connections-heading h2 { margin: 4px 0 2px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(2rem, 8vw, 2.8rem); letter-spacing: -0.05em; }
+.connections-heading p { margin: 0; color: var(--text-soft); font-size: 13px; }
+.connections-status { margin: 42px 0; color: var(--text-soft); text-align: center; }
+.connections-mistakes { display: flex; justify-content: center; gap: 7px; margin: 24px 0 16px; }
+.connections-mistakes i { width: 8px; height: 8px; border: 1px solid var(--line-strong); border-radius: 50%; background: transparent; }
+.connections-mistakes i[data-used='true'] { border-color: var(--present); background: var(--present); }
+.connections-groups { display: grid; gap: 8px; margin-bottom: 12px; }
+.connections-group { display: grid; gap: 2px; padding: 13px 16px; border-radius: 7px; background: color-mix(in srgb, var(--correct) 24%, var(--surface)); text-align: center; }
+.connections-group strong { font-size: 13px; }
+.connections-group span { color: var(--text-soft); font-size: 11px; }
+.connections-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 20px; }
+.connections-word { min-height: 76px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer; }
+.connections-word:hover { border-color: var(--line-strong); }
+.connections-word[data-selected='true'] { border-color: var(--text); background: var(--invert-bg); color: var(--invert-text); transform: translateY(-2px); }
+.connections-actions { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+.connections-actions button { width: 140px; }
+.secondary-button { padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 7px; background: transparent; font-size: 14px; font-weight: 700; cursor: pointer; }
+.secondary-button:disabled { opacity: 0.45; cursor: default; }
+.connections-feedback { min-height: 24px; margin: 14px 0 0; color: var(--text-soft); font-size: 13px; text-align: center; }
+.connections-finished { display: grid; gap: 5px; margin-top: 30px; padding: 24px; border: 1px solid var(--line); border-radius: 8px; text-align: center; }
+.connections-finished span { color: var(--text-soft); font-size: 13px; }
 .mode-tabs button[aria-pressed='true'] { background: var(--key-bg); color: var(--text); }
 
 .board-area { flex: none; display: flex; align-items: center; justify-content: center; padding: 12px 16px 24px; }
@@ -676,6 +701,9 @@ button { font: inherit; color: inherit; }
   .keyboard-row[data-indent='true'] { padding: 0 12px; }
   .archive-browser { padding: 20px 16px 30px; }
   .archive-row { padding: 13px 0; }
+  .connections-game { padding: 24px 16px 36px; }
+  .connections-grid { gap: 6px; }
+  .connections-word { min-height: 64px; padding: 6px 4px; font-size: 11px; }
 }
 
 @media (min-width: 501px) and (max-height: 820px) {

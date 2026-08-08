@@ -201,6 +201,66 @@ test.describe('protected Wordo play', () => {
     await expect(page.getByText('Connections')).toBeVisible()
   })
 
+  test('opens and plays the protected Connections board', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action === 'connections-start') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sessionToken: 'connections-test-token',
+            connections: {
+              state: {
+                puzzleId: 'connections-test-puzzle',
+                date: '2026-08-08',
+                words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO'],
+                solvedGroups: [],
+                attempts: [],
+                mistakeCount: 0,
+                maxMistakes: 4,
+                status: 'active',
+              },
+            },
+          }),
+        })
+        return
+      }
+
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionToken: 'connections-test-token',
+          connections: {
+            result: { result: 'correct', group: { key: 'fruit', label: 'Fruit', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } },
+            state: {
+              puzzleId: 'connections-test-puzzle',
+              date: '2026-08-08',
+              words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO'],
+              solvedGroups: [{ key: 'fruit', label: 'Fruit', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] }],
+              attempts: [{ words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'], result: 'correct', group: { key: 'fruit', label: 'Fruit', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } }],
+              mistakeCount: 0,
+              maxMistakes: 4,
+              status: 'active',
+            },
+          },
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Connections/ }).click()
+    const connections = page.getByRole('region', { name: 'Connections game' })
+    await expect(connections.getByRole('heading', { name: 'Connections' })).toBeVisible()
+    await expect(connections.locator('.connections-word')).toHaveCount(8)
+    for (const word of ['APPLE', 'MANGO', 'PEAR', 'PLUM']) {
+      await page.getByRole('button', { name: word, exact: true }).click()
+    }
+    await page.getByRole('button', { name: 'Submit' }).click()
+    await expect(connections.getByText('Fruit', { exact: true })).toBeVisible()
+    await expect(connections.locator('.connections-word')).toHaveCount(4)
+  })
+
   test('opens the protected archive browser and starts a past edition', async ({ page }) => {
     await page.route('**/functions/v1/wordle', async (route) => {
       const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string; mode?: string }
