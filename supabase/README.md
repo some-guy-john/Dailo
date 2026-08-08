@@ -11,7 +11,8 @@ The Dailo Release 1 backend keeps Wordo answers and Connections group data behin
 5. Add published rows to `wordle_daily_assignments` using `Europe/London` calendar dates.
 6. Validate, review, schedule, and publish Connections content with the scripts documented in `content/README.md`.
 7. Deploy `functions/wordle`.
-8. Configure the frontend with the public Supabase URL and anon key only.
+8. Deploy `functions/wordo-versus`.
+9. Configure the frontend with the public Supabase URL and anon key only.
 
 The Edge Function uses `SUPABASE_SERVICE_ROLE_KEY` server-side. Never put that value in the frontend, repository, or issue tracker.
 
@@ -98,6 +99,14 @@ Each Connections group has one unique difficulty from 1 through 4. The database 
 When a confirmed user starts or resumes Connections, the server binds a session only after the player proves possession of its token or starts while authenticated. Verified completed Daily sessions provide cross-device Connections statistics through `connections-stats`. Browser-only historical summaries are never uploaded or treated as authoritative.
 
 Connections Archive uses `connections-archive-list`, `connections-archive-stats`, and `connections-start` with `mode: "archive"` plus an `archiveDate`. Only confirmed users may list, start, resume, or submit archive sessions. Archive sessions and statistics are stored separately and never affect Connections Daily streaks.
+
+## Wordo Versus
+
+The separate `wordo-versus` function accepts `create`, `join`, `state`, `guess`, and `concede`. Creation returns distinct invitation and participant capabilities. The invitation hash may be shared, but participant tokens must stay in browser storage and must never appear in URLs.
+
+Matches activate only after the second player claims the invitation. Both players receive six guesses and 24 hours from activation. Caller responses include their own guesses and only coloured tile states for the opponent. The answer is returned only after completion, cancellation, or expiry. Fewest successful guesses wins; equal successful counts and dual failures draw. A solver wins on expiry when the opponent has not finished, otherwise an unsolved expired match is void.
+
+Versus answers are selected from active curated answers after excluding all draft and published Daily assignments. Match, player, and attempt tables deny direct browser access, while atomic lifecycle RPCs are executable only by the service role.
 
 ## Content Import
 

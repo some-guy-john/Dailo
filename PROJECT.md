@@ -39,6 +39,7 @@ The deployed Release 1 experience includes:
 - Protected Supabase sessions and server-authoritative guesses
 - Protected Connections sessions and server-authoritative group submissions
 - Connections sharing, local statistics, and signed-in verified Daily result sync
+- Protected private Wordo Versus match lifecycle with anonymous invite capabilities
 - London-time daily rollover handling
 - Browser-local stats, streaks, preferences, and refresh recovery
 - Responsive mobile and desktop layout with reduced-motion and high-contrast options
