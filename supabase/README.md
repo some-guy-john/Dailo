@@ -97,6 +97,8 @@ Each Connections group has one unique difficulty from 1 through 4. The database 
 
 When a confirmed user starts or resumes Connections, the server binds a session only after the player proves possession of its token or starts while authenticated. Verified completed Daily sessions provide cross-device Connections statistics through `connections-stats`. Browser-only historical summaries are never uploaded or treated as authoritative.
 
+Connections Archive uses `connections-archive-list`, `connections-archive-stats`, and `connections-start` with `mode: "archive"` plus an `archiveDate`. Only confirmed users may list, start, resume, or submit archive sessions. Archive sessions and statistics are stored separately and never affect Connections Daily streaks.
+
 ## Content Import
 
 Validate a JSON file before import:

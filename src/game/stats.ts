@@ -10,7 +10,7 @@ export const EMPTY_STATS: Stats = {
 }
 
 export function recordConnectionsSession(stats: Stats, session: ConnectionsSession): Stats {
-  if (session.status === 'active' || stats.connectionsDailyResults[session.date]) return stats
+  if (session.mode !== 'daily' || session.status === 'active' || stats.connectionsDailyResults[session.date]) return stats
   const result: ConnectionsDailyResult = {
     date: session.date,
     won: session.status === 'won',

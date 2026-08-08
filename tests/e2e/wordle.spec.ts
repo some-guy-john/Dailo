@@ -211,6 +211,7 @@ test.describe('protected Wordo play', () => {
             sessionToken: 'connections-test-token',
             connections: {
               state: {
+                mode: 'daily',
                 puzzleId: 'connections-test-puzzle',
                 date: '2026-08-08',
                 words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO'],
@@ -233,6 +234,7 @@ test.describe('protected Wordo play', () => {
           connections: {
             result: { result: 'correct', group: { key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } },
             state: {
+              mode: 'daily',
               puzzleId: 'connections-test-puzzle',
               date: '2026-08-08',
               words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO'],
@@ -276,6 +278,7 @@ test.describe('protected Wordo play', () => {
         body: JSON.stringify({
           sessionToken: 'completed-connections-token',
           connections: { state: {
+            mode: 'daily',
             puzzleId: 'completed-connections-puzzle', date: '2026-08-08',
             words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO', 'CIRCLE', 'OVAL', 'SQUARE', 'TRIANGLE', 'LION', 'PUMA', 'TIGER', 'LEOPARD'],
             solvedGroups: [
@@ -302,6 +305,46 @@ test.describe('protected Wordo play', () => {
     expect(copiedText).toContain('Dailo Connections 2026-08-08 4/4')
     expect(copiedText).not.toContain('APPLE')
     expect(copiedText).not.toContain('Fruit')
+  })
+
+  test('lists and starts a Connections archive puzzle separately from Daily', async ({ page }) => {
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string; mode?: string; archiveDate?: string }
+      if (body.action === 'connections-archive-list') {
+        await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ connectionsArchives: [{ date: '2026-08-07', puzzleId: 'connections-archive-puzzle', status: null }] }) })
+        return
+      }
+      if (body.action === 'connections-archive-stats') {
+        await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ connectionsArchiveStats: { played: 0, wins: 0, mistakeDistribution: [0, 0, 0, 0, 0] } }) })
+        return
+      }
+      if (body.action === 'connections-start' && body.mode === 'archive') {
+        expect(body.archiveDate).toBe('2026-08-07')
+        await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+          sessionToken: 'connections-archive-token',
+          connections: { state: {
+            mode: 'archive', puzzleId: 'connections-archive-puzzle', date: '2026-08-07',
+            words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO', 'CIRCLE', 'OVAL', 'SQUARE', 'TRIANGLE', 'LION', 'PUMA', 'TIGER', 'LEOPARD'],
+            solvedGroups: [], attempts: [], mistakeCount: 0, maxMistakes: 4, status: 'active',
+          } },
+        }) })
+        return
+      }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        sessionToken: 'connections-daily-token',
+        connections: { state: { mode: 'daily', puzzleId: 'daily', date: '2026-08-08', words: [], solvedGroups: [], attempts: [], mistakeCount: 0, maxMistakes: 4, status: 'active' } },
+      }) })
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: 'Browse archive' }).click()
+    const archive = page.getByRole('region', { name: 'Connections archive' })
+    await expect(archive.getByRole('heading', { name: 'Connections Archive' })).toBeVisible()
+    await archive.getByRole('button', { name: /Fri 7 Aug/ }).click()
+    await expect(page.getByRole('heading', { name: /Connections · Fri 7 Aug/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Play today' })).toBeVisible()
   })
 
   test('opens the protected archive browser and starts a past edition', async ({ page }) => {

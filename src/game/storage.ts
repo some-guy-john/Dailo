@@ -5,7 +5,8 @@ const statsKey = 'dailies:stats:v1'
 const themeKey = 'dailies:theme:v1'
 const prefsKey = 'dailies:prefs:v1'
 const browserIdKey = 'dailies:browser-id:v1'
-const connectionsSessionKey = 'dailies:connections-session:v1'
+const connectionsSessionKey = 'dailies:connections-session:v2'
+const legacyConnectionsSessionKey = 'dailies:connections-session:v1'
 
 export type Preferences = {
   highContrast: boolean
@@ -60,13 +61,15 @@ export function saveSession(session: GameSession): void {
   write(getSessionKey(session.mode, session.date), session)
 }
 
-export function loadConnectionsSession(date: string): ConnectionsSession | null {
-  const session = read<ConnectionsSession>(connectionsSessionKey)
-  return session?.date === date ? session : null
+export function loadConnectionsSession(date: string, mode: ConnectionsSession['mode'] = 'daily'): ConnectionsSession | null {
+  const session = read<ConnectionsSession>(`${connectionsSessionKey}:${mode}:${date}`)
+  if (session || mode !== 'daily') return session
+  const legacy = read<Omit<ConnectionsSession, 'mode'> & { mode?: ConnectionsSession['mode'] }>(legacyConnectionsSessionKey)
+  return legacy?.date === date ? { ...legacy, mode: legacy.mode ?? 'daily' } : null
 }
 
 export function saveConnectionsSession(session: ConnectionsSession): void {
-  write(connectionsSessionKey, session)
+  write(`${connectionsSessionKey}:${session.mode}:${session.date}`, session)
 }
 
 export function loadTheme(): 'system' | 'light' | 'dark' {

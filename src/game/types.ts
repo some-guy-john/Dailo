@@ -72,6 +72,7 @@ export type ConnectionsAttempt = {
 }
 
 export type ConnectionsSession = {
+  mode: 'daily' | 'archive'
   puzzleId: string
   date: string
   sessionToken?: string

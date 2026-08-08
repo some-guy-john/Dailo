@@ -72,11 +72,12 @@ describe('Connections daily results', () => {
       dailyResults: {}, unlimitedResults: [], archiveResults: [], recentUnlimitedPuzzleIds: [], connectionsDailyResults: {},
     }
     const session = {
-      puzzleId: 'connections-1', date: '2026-08-08', words: [], solvedGroups: [], attempts: [],
+      mode: 'daily' as const, puzzleId: 'connections-1', date: '2026-08-08', words: [], solvedGroups: [], attempts: [],
       mistakeCount: 2, maxMistakes: 4, status: 'won' as const, startedAt: '2026-08-08T00:00:00Z',
     }
     const recorded = recordConnectionsSession(stats, session)
     expect(recorded.connectionsDailyResults['2026-08-08']).toEqual({ date: '2026-08-08', won: true, mistakes: 2 })
     expect(recordConnectionsSession(recorded, { ...session, mistakeCount: 3 })).toBe(recorded)
+    expect(recordConnectionsSession(stats, { ...session, mode: 'archive' })).toBe(stats)
   })
 })

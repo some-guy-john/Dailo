@@ -33,6 +33,7 @@ type BackendResponse = {
 }
 
 type ConnectionsBackendState = {
+  mode: ConnectionsSession['mode']
   puzzleId: string
   date: string
   words: string[]
@@ -65,6 +66,9 @@ export type ConnectionsStats = {
   dailyResults: Record<string, { date: string; won: boolean; mistakes: number }>
 }
 
+export type ConnectionsArchivePuzzle = { date: string; puzzleId: string; status: 'active' | 'won' | 'lost' | null }
+export type ConnectionsArchiveStats = { played: number; wins: number; mistakeDistribution: number[] }
+
 export const isProtectedBackendConfigured = Boolean(
   import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY,
 )
@@ -90,6 +94,7 @@ export function createEmptySession(mode: GameMode, date: string): GameSession {
 function fromConnectionsState(state: ConnectionsBackendState, sessionToken: string, previous?: ConnectionsSession): ConnectionsSession {
   return {
     puzzleId: state.puzzleId,
+    mode: state.mode,
     date: state.date,
     sessionToken,
     words: state.words,
@@ -166,14 +171,16 @@ export async function startGame(mode: GameMode, stats: Stats, date: string, forc
   return fromBackendState(response.state, response.sessionToken, saved ?? undefined)
 }
 
-export async function startConnections(date: string, forceNew = false): Promise<ConnectionsSession> {
-  const saved = forceNew ? null : loadConnectionsSession(date)
+export async function startConnections(date: string, forceNew = false, mode: ConnectionsSession['mode'] = 'daily'): Promise<ConnectionsSession> {
+  const saved = forceNew ? null : loadConnectionsSession(date, mode)
   if (!isProtectedBackendConfigured) {
     throw new GameServiceError('configuration_missing', 'Connect Supabase before starting Connections.')
   }
 
   const response = await callBackend({
     action: 'connections-start',
+    mode,
+    archiveDate: mode === 'archive' ? date : undefined,
     sessionToken: saved?.sessionToken,
     browserId: loadBrowserId(),
   })
@@ -181,6 +188,16 @@ export async function startConnections(date: string, forceNew = false): Promise<
     throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete Connections puzzle.')
   }
   return fromConnectionsState(response.connections.state, response.sessionToken, saved ?? undefined)
+}
+
+export async function listConnectionsArchive(): Promise<ConnectionsArchivePuzzle[]> {
+  const response = await callBackend({ action: 'connections-archive-list' })
+  return (response as BackendResponse & { connectionsArchives?: ConnectionsArchivePuzzle[] }).connectionsArchives ?? []
+}
+
+export async function getConnectionsArchiveStats(): Promise<ConnectionsArchiveStats> {
+  const response = await callBackend({ action: 'connections-archive-stats' })
+  return (response as BackendResponse & { connectionsArchiveStats?: ConnectionsArchiveStats }).connectionsArchiveStats ?? { played: 0, wins: 0, mistakeDistribution: [] }
 }
 
 export async function getConnectionsStats(): Promise<ConnectionsStats> {

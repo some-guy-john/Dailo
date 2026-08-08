@@ -34,5 +34,6 @@ export function createConnectionsShareText(session: ConnectionsSession): string 
   const grid = session.attempts.map((attempt) => attempt.words
     .map((word) => CONNECTIONS_SQUARES[(difficultyByWord.get(word) ?? 1) - 1])
     .join('')).join('\n')
-  return `Dailo Connections ${session.date} ${session.status === 'won' ? '4/4' : 'X/4'}\nMistakes: ${session.mistakeCount}/${session.maxMistakes}\n\n${grid}`
+  const label = session.mode === 'archive' ? 'Dailo Connections Archive' : 'Dailo Connections'
+  return `${label} ${session.date} ${session.status === 'won' ? '4/4' : 'X/4'}\nMistakes: ${session.mistakeCount}/${session.maxMistakes}\n\n${grid}`
 }

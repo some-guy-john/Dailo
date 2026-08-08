@@ -12,8 +12,8 @@ import {
   saveStats,
   saveTheme,
 } from './game/storage'
-import { createEmptySession, GameServiceError, getArchiveStats, getConnectionsStats, listArchivePuzzles, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
-import type { ArchiveStats, ConnectionsStats } from './game/service'
+import { createEmptySession, GameServiceError, getArchiveStats, getConnectionsArchiveStats, getConnectionsStats, listArchivePuzzles, listConnectionsArchive, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
+import type { ArchiveStats, ConnectionsArchiveStats, ConnectionsStats } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
 import { createConnectionsShareText, createShareText } from './game/share'
 import type { ConnectionsSession, GameMode, GameSession, Stats, TileState } from './game/types'
@@ -55,6 +55,10 @@ function App() {
   const [connectionsNotice, setConnectionsNotice] = useState('')
   const [connectionsLoading, setConnectionsLoading] = useState(false)
   const [connectionsSubmitting, setConnectionsSubmitting] = useState(false)
+  const [connectionsArchiveDate, setConnectionsArchiveDate] = useState<string | null>(null)
+  const [connectionsArchiveOpen, setConnectionsArchiveOpen] = useState(false)
+  const [connectionsArchivePuzzles, setConnectionsArchivePuzzles] = useState<Awaited<ReturnType<typeof listConnectionsArchive>>>([])
+  const [connectionsArchiveStats, setConnectionsArchiveStats] = useState<ConnectionsArchiveStats>({ played: 0, wins: 0, mistakeDistribution: [] })
   const [connectionsCloudStats, setConnectionsCloudStats] = useState<ConnectionsStats>({ dailyResults: {} })
   const [connectionsCloudStatsLoaded, setConnectionsCloudStatsLoaded] = useState(false)
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
@@ -101,6 +105,11 @@ function App() {
   const connectionsMistakeDistribution = Array.from({ length: 5 }, (_, mistakes) => (
     Object.values(connectionsResults).filter((result) => result.won && result.mistakes === mistakes).length
   ))
+  const showingConnectionsArchiveStats = connectionsArchiveOpen || connectionsSession?.mode === 'archive'
+  const displayedConnectionsPlayed = showingConnectionsArchiveStats ? connectionsArchiveStats.played : connectionsPlayed
+  const displayedConnectionsWins = showingConnectionsArchiveStats ? connectionsArchiveStats.wins : connectionsWins
+  const displayedConnectionsWinPercentage = displayedConnectionsPlayed === 0 ? 0 : Math.round((displayedConnectionsWins / displayedConnectionsPlayed) * 100)
+  const displayedConnectionsDistribution = showingConnectionsArchiveStats ? connectionsArchiveStats.mistakeDistribution : connectionsMistakeDistribution
 
   useEffect(() => {
     if (!session.sessionToken) return
@@ -257,12 +266,14 @@ function App() {
   }, [mode, today, archiveDate, reloadKey, screen])
 
   useEffect(() => {
-    if (screen !== 'connections') return
+    if (screen !== 'connections' || connectionsArchiveOpen) return
     let cancelled = false
     setConnectionsLoading(true)
     setConnectionsSelected([])
     setConnectionsNotice('')
-    void startConnections(today)
+    const date = connectionsArchiveDate ?? today
+    const connectionsMode = connectionsArchiveDate ? 'archive' : 'daily'
+    void startConnections(date, false, connectionsMode)
       .then((nextSession) => {
         if (cancelled) return
         setConnectionsSession(nextSession)
@@ -276,7 +287,21 @@ function App() {
         setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections could not be loaded.')
       })
     return () => { cancelled = true }
-  }, [screen, today, user?.id])
+  }, [screen, today, user?.id, connectionsArchiveDate, connectionsArchiveOpen])
+
+  useEffect(() => {
+    if (screen !== 'connections' || !connectionsArchiveOpen) return
+    setConnectionsLoading(true)
+    setConnectionsNotice('')
+    void Promise.all([listConnectionsArchive(), getConnectionsArchiveStats()]).then(([puzzles, archiveStats]) => {
+      setConnectionsArchivePuzzles(puzzles)
+      setConnectionsArchiveStats(archiveStats)
+      setConnectionsLoading(false)
+    }).catch((error: unknown) => {
+      setConnectionsLoading(false)
+      setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections Archive could not be loaded.')
+    })
+  }, [screen, connectionsArchiveOpen, user?.id])
 
   useEffect(() => {
     if (!dialog) return
@@ -457,7 +482,21 @@ function App() {
 
   function openConnections() {
     setDialog(null)
+    setConnectionsArchiveOpen(false)
+    setConnectionsArchiveDate(null)
     setScreen('connections')
+  }
+
+  function openConnectionsArchive() {
+    setDialog(null)
+    setConnectionsSession(null)
+    setConnectionsArchiveDate(null)
+    setConnectionsArchiveOpen(true)
+  }
+
+  function playConnectionsArchive(date: string) {
+    setConnectionsArchiveDate(date)
+    setConnectionsArchiveOpen(false)
   }
 
   function toggleConnectionsWord(word: string) {
@@ -485,6 +524,7 @@ function App() {
           setConnectionsCloudStats(nextStats)
           setConnectionsCloudStatsLoaded(true)
         }).catch(() => {})
+        if (response.session.mode === 'archive') void getConnectionsArchiveStats().then(setConnectionsArchiveStats).catch(() => {})
         window.setTimeout(() => setDialog('stats'), 900)
       }
     } catch (error: unknown) {
@@ -692,15 +732,26 @@ function App() {
           </div>
         </section>
       ) : screen === 'connections' ? (
-        <section className="screen connections-screen" aria-label="Connections game">
+        <section className="screen connections-screen" aria-label={connectionsArchiveOpen ? 'Connections archive' : 'Connections game'}>
           <div className="connections-game">
             <div className="connections-heading">
               <span>Word groups</span>
-              <h2>Connections</h2>
-              <p>Find four groups of four. You have four mistakes.</p>
+              <h2>{connectionsArchiveOpen ? 'Connections Archive' : connectionsArchiveDate ? `Connections · ${formatLondonDate(connectionsArchiveDate)}` : 'Connections'}</h2>
+              <p>{connectionsArchiveOpen ? 'Past editions, separate from your Daily streak.' : 'Find four groups of four. You have four mistakes.'}</p>
+              {!connectionsArchiveOpen && <button className="back-link" type="button" onClick={connectionsArchiveDate ? openConnections : openConnectionsArchive}>{connectionsArchiveDate ? 'Play today' : 'Browse archive'}</button>}
             </div>
             {connectionsLoading && <p className="connections-status">Loading today’s puzzle…</p>}
-            {!connectionsLoading && connectionsSession && (
+            {!connectionsLoading && connectionsArchiveOpen && !connectionsNotice && (
+              <div className="archive-list">
+                <div className="archive-summary"><b>{connectionsArchiveStats.played}</b><span>played</span><b>{connectionsArchiveStats.wins}</b><span>won</span></div>
+                {connectionsArchivePuzzles.length === 0 ? <div className="archive-empty"><strong>No past Connections puzzles yet</strong></div> : connectionsArchivePuzzles.map((puzzle) => (
+                  <button className="archive-item" type="button" key={puzzle.date} onClick={() => playConnectionsArchive(puzzle.date)}>
+                    <span>{formatLondonDate(puzzle.date)}</span><b>{puzzle.status === 'won' ? 'Won' : puzzle.status === 'lost' ? 'Played' : puzzle.status === 'active' ? 'Resume' : 'Play'}</b>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!connectionsLoading && !connectionsArchiveOpen && connectionsSession && (
               <>
                 <div className="connections-mistakes" aria-label={`${connectionsSession.mistakeCount} of ${connectionsSession.maxMistakes} mistakes used`}>
                   {Array.from({ length: connectionsSession.maxMistakes }).map((_, index) => <i data-used={index < connectionsSession.mistakeCount} key={index} />)}
@@ -974,14 +1025,14 @@ function App() {
             {screen === 'connections' ? (
               <>
                 <div className="stat-row">
-                  <div className="stat"><b>{connectionsPlayed}</b><span>Played</span></div>
-                  <div className="stat"><b>{connectionsWinPercentage}</b><span>Win %</span></div>
-                  <div className="stat"><b>{connectionsCurrentStreak}</b><span>Current streak</span></div>
-                  <div className="stat"><b>{connectionsMaximumStreak}</b><span>Max streak</span></div>
+                  <div className="stat"><b>{displayedConnectionsPlayed}</b><span>Played</span></div>
+                  <div className="stat"><b>{displayedConnectionsWinPercentage}</b><span>Win %</span></div>
+                  <div className="stat"><b>{showingConnectionsArchiveStats ? '—' : connectionsCurrentStreak}</b><span>{showingConnectionsArchiveStats ? 'No streak' : 'Current streak'}</span></div>
+                  <div className="stat"><b>{showingConnectionsArchiveStats ? '—' : connectionsMaximumStreak}</b><span>{showingConnectionsArchiveStats ? 'No streak' : 'Max streak'}</span></div>
                 </div>
                 <h2>Mistakes in wins</h2>
                 <div className="connections-distribution">
-                  {connectionsMistakeDistribution.map((count, mistakes) => <div key={mistakes}><b>{count}</b><span>{mistakes} mistake{mistakes === 1 ? '' : 's'}</span></div>)}
+                  {displayedConnectionsDistribution.map((count, mistakes) => <div key={mistakes}><b>{count}</b><span>{mistakes} mistake{mistakes === 1 ? '' : 's'}</span></div>)}
                 </div>
                 {user && <div className="device-stats"><b>This device</b><span>{Object.keys(connectionsDeviceResults).length} locally saved result{Object.keys(connectionsDeviceResults).length === 1 ? '' : 's'}. Cloud statistics above include verified signed-in games only.</span></div>}
                 <div className="share-split">
@@ -989,7 +1040,7 @@ function App() {
                   <div className="share-rule" />
                   <button className="primary-button" type="button" onClick={() => void shareConnectionsResult()} disabled={!connectionsSession || connectionsSession.status === 'active'}>{shareLabel}</button>
                 </div>
-                <p className="fine" style={{ marginTop: 14 }}>{user ? 'Verified signed-in results sync across devices. Older device results remain local.' : 'Saved in this browser only. Sign in to sync future verified results.'}</p>
+                <p className="fine" style={{ marginTop: 14 }}>{showingConnectionsArchiveStats ? 'Archive results are synced separately and never change your Daily streak.' : user ? 'Verified signed-in results sync across devices. Older device results remain local.' : 'Saved in this browser only. Sign in to sync future verified results.'}</p>
               </>
             ) : <><div className="stat-row">
               <div className="stat"><b>{mode === 'archive' ? displayedArchivePlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>

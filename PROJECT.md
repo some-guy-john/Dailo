@@ -32,6 +32,7 @@ The deployed Release 1 experience includes:
 - Wordo Daily and Wordo Unlimited modes
 - Daily Connections mode with four hidden groups of four words
 - Confirmed-account Wordo Archive browsing for published past editions
+- Confirmed-account Connections Archive with separate replay statistics
 - Supabase email/password accounts for Archive access, including email confirmation and password recovery
 - Cross-device resume for authenticated Archive sessions
 - Server-synced Archive play statistics

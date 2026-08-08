@@ -47,7 +47,7 @@ describe('share text', () => {
 describe('Connections share text', () => {
   it('shares colored attempts without words or group labels', () => {
     const text = createConnectionsShareText({
-      puzzleId: 'connections-1', date: '2026-08-08', words: ['APPLE', 'PEAR', 'HARP', 'LION'],
+      mode: 'daily', puzzleId: 'connections-1', date: '2026-08-08', words: ['APPLE', 'PEAR', 'HARP', 'LION'],
       solvedGroups: [
         { key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] },
         { key: 'music', label: 'Instruments', difficulty: 2, words: ['HARP', 'CELLO', 'VIOLIN', 'GUITAR'] },
@@ -61,5 +61,9 @@ describe('Connections share text', () => {
     expect(text).toContain('🟨🟩🟦🟪')
     expect(text).not.toContain('APPLE')
     expect(text).not.toContain('Fruit')
+    expect(createConnectionsShareText({
+      mode: 'archive', puzzleId: 'archive-1', date: '2026-08-07', words: [], solvedGroups: [], attempts: [],
+      mistakeCount: 4, maxMistakes: 4, status: 'lost', startedAt: '2026-08-08T00:00:00Z',
+    })).toContain('Dailo Connections Archive 2026-08-07 X/4')
   })
 })

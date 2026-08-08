@@ -36,6 +36,7 @@ type ConnectionsSessionRow = {
   token_hash: string
   browser_id_hash: string | null
   auth_user_id: string | null
+  mode: 'daily' | 'archive'
   puzzle_id: string
   london_date: string
   status: 'active' | 'won' | 'lost' | 'expired'
@@ -147,6 +148,7 @@ async function connectionsState(session: ConnectionsSessionRow) {
   const solvedGroups = groups.filter((group) => solvedKeys.includes(group.key))
   const revealAll = session.status === 'won' || session.status === 'lost' || session.status === 'expired'
   return {
+    mode: session.mode,
     puzzleId: puzzle.public_key,
     date: puzzle.london_date,
     words: puzzle.words,
@@ -162,11 +164,16 @@ async function connectionsState(session: ConnectionsSessionRow) {
   }
 }
 
-const connectionsSessionColumns = 'id, token_hash, browser_id_hash, auth_user_id, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at'
+const connectionsSessionColumns = 'id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at'
 
 async function startConnections(body: Record<string, unknown>, request: Request) {
+  const mode = body.mode === 'archive' ? 'archive' : 'daily'
   const currentDate = londonDate()
-  const authUser = await optionalConfirmedUser(request)
+  const authUser = mode === 'archive' ? await requireConfirmedUser(request) : await optionalConfirmedUser(request)
+  const puzzleDate = mode === 'archive' ? requireString(body.archiveDate, 'archive_date', 10) : currentDate
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(puzzleDate) || (mode === 'archive' && puzzleDate >= currentDate)) {
+    throw new RequestError('archive_date_unavailable', 'Only past Connections puzzles are available in the archive.', 422)
+  }
   const providedToken = body.sessionToken
   if (typeof providedToken === 'string' && providedToken.length > 0) {
     const tokenHash = await hashToken(providedToken)
@@ -177,6 +184,7 @@ async function startConnections(body: Record<string, unknown>, request: Request)
       .maybeSingle()
     if (error) throw new RequestError('temporary_server_failure', error.message, 503)
     if (session) {
+      if (session.mode !== mode) throw new RequestError('invalid_session', 'This Connections session belongs to another mode.', 409)
       if (session.auth_user_id && session.auth_user_id !== authUser?.id) throw new RequestError('invalid_session', 'This Connections session belongs to another account.', 401)
       if (authUser && !session.auth_user_id) {
         const { error: claimError } = await admin.from('connections_game_sessions').update({ auth_user_id: authUser.id }).eq('id', session.id).is('auth_user_id', null)
@@ -190,7 +198,7 @@ async function startConnections(body: Record<string, unknown>, request: Request)
   const browserIdHash = await hashOptionalIdentifier(body.browserId)
   if (authUser) {
     const { data: existing, error } = await admin.from('connections_game_sessions').select(connectionsSessionColumns)
-      .eq('auth_user_id', authUser.id).eq('london_date', currentDate).maybeSingle()
+      .eq('auth_user_id', authUser.id).eq('london_date', puzzleDate).eq('mode', mode).maybeSingle()
     if (error) throw new RequestError('temporary_server_failure', error.message, 503)
     if (existing) {
       const replacementToken = createSessionToken()
@@ -208,7 +216,8 @@ async function startConnections(body: Record<string, unknown>, request: Request)
       .from('connections_game_sessions')
       .select(connectionsSessionColumns)
       .eq('browser_id_hash', browserIdHash)
-      .eq('london_date', currentDate)
+      .eq('london_date', puzzleDate)
+      .eq('mode', mode)
       .maybeSingle()
     if (error) throw new RequestError('temporary_server_failure', error.message, 503)
     if (existing) throw new RequestError('connections_already_started', 'This browser already has today’s Connections puzzle.', 409)
@@ -217,7 +226,7 @@ async function startConnections(body: Record<string, unknown>, request: Request)
   const { data: puzzle, error: puzzleError } = await admin
     .from('connections_daily_puzzles')
     .select('id')
-    .eq('london_date', currentDate)
+    .eq('london_date', puzzleDate)
     .eq('status', 'published')
     .maybeSingle()
   if (puzzleError) throw new RequestError('temporary_server_failure', puzzleError.message, 503)
@@ -231,8 +240,9 @@ async function startConnections(body: Record<string, unknown>, request: Request)
       token_hash: tokenHash,
       browser_id_hash: browserIdHash,
       auth_user_id: authUser?.id ?? null,
+      mode,
       puzzle_id: puzzle.id,
-      london_date: currentDate,
+      london_date: puzzleDate,
       expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 8).toISOString(),
     })
     .select(connectionsSessionColumns)
@@ -296,6 +306,7 @@ async function connectionsStats(request: Request) {
   const authUser = await requireConfirmedUser(request)
   const { data, error } = await admin.from('connections_game_sessions')
     .select('london_date, status, mistake_count').eq('auth_user_id', authUser.id)
+    .eq('mode', 'daily')
     .in('status', ['won', 'lost']).order('london_date', { ascending: true }).limit(1000)
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
   const dailyResults = Object.fromEntries((data ?? []).map((session) => [session.london_date, {
@@ -304,6 +315,37 @@ async function connectionsStats(request: Request) {
     mistakes: session.mistake_count,
   }]))
   return { connections: { stats: { dailyResults } } }
+}
+
+async function listConnectionsArchive(request: Request) {
+  const authUser = await requireConfirmedUser(request)
+  const currentDate = londonDate()
+  const { data: puzzles, error } = await admin.from('connections_daily_puzzles')
+    .select('public_key, london_date').eq('status', 'published').lt('london_date', currentDate)
+    .order('london_date', { ascending: false }).limit(365)
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  const dates = (puzzles ?? []).map((puzzle) => puzzle.london_date)
+  const { data: sessions, error: sessionsError } = dates.length === 0
+    ? { data: [], error: null }
+    : await admin.from('connections_game_sessions').select('london_date, status')
+      .eq('auth_user_id', authUser.id).eq('mode', 'archive').in('london_date', dates)
+  if (sessionsError) throw new RequestError('temporary_server_failure', sessionsError.message, 503)
+  const statusByDate = new Map((sessions ?? []).map((session) => [session.london_date, session.status]))
+  return { connectionsArchives: (puzzles ?? []).map((puzzle) => ({
+    date: puzzle.london_date, puzzleId: puzzle.public_key, status: statusByDate.get(puzzle.london_date) ?? null,
+  })) }
+}
+
+async function connectionsArchiveStats(request: Request) {
+  const authUser = await requireConfirmedUser(request)
+  const { data, error } = await admin.from('connections_game_sessions').select('status, mistake_count')
+    .eq('auth_user_id', authUser.id).eq('mode', 'archive').in('status', ['won', 'lost']).limit(1000)
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  const mistakeDistribution = Array.from({ length: 5 }, () => 0)
+  for (const session of data ?? []) if (session.status === 'won') mistakeDistribution[session.mistake_count] += 1
+  return { connectionsArchiveStats: {
+    played: data?.length ?? 0, wins: (data ?? []).filter((session) => session.status === 'won').length, mistakeDistribution,
+  } }
 }
 
 async function startSession(body: Record<string, unknown>, request: Request) {
@@ -584,6 +626,8 @@ async function handle(request: Request): Promise<Response> {
     if (action === 'connections-start') return json(await startConnections(body, request))
     if (action === 'connections-submit') return json(await submitConnections(body, request))
     if (action === 'connections-stats') return json(await connectionsStats(request))
+    if (action === 'connections-archive-list') return json(await listConnectionsArchive(request))
+    if (action === 'connections-archive-stats') return json(await connectionsArchiveStats(request))
     if (action === 'archive-list') return json(await listArchive(body, request))
     if (action === 'archive-stats') return json(await archiveStats(request))
     if (action === 'guess') return json(await submitGuess(body, request))
