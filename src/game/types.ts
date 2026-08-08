@@ -23,6 +23,8 @@ export type GameSession = {
   status: GameStatus
   startedAt: string
   completedAt?: string
+  accountOwned?: boolean
+  accountUserId?: string
 }
 
 export type DailyResult = {
@@ -83,4 +85,6 @@ export type ConnectionsSession = {
   maxMistakes: number
   status: 'active' | 'won' | 'lost'
   startedAt: string
+  accountOwned?: boolean
+  accountUserId?: string
 }

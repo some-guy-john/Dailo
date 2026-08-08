@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, errorResponse, json, readBody } from '../_shared/http.ts'
-import { createSessionToken, hashToken, isUuid, londonDate } from '../_shared/wordle.ts'
+import { consumeRateLimit } from '../_shared/rate-limit.ts'
+import { createSessionToken, hashToken, isCalendarDate, isUuid, londonDate } from '../_shared/wordle.ts'
 
 type SessionRow = {
   id: string
@@ -62,7 +63,7 @@ function requireString(value: unknown, field: string, maxLength = 256): string {
 
 class RequestError extends Error {
   constructor(public code: string, message: string, public status: number) {
-    super(message)
+    super(code === 'temporary_server_failure' ? 'The service is temporarily unavailable.' : message)
   }
 }
 
@@ -94,18 +95,69 @@ async function optionalConfirmedUser(request: Request): Promise<{ id: string; em
 
 async function findSession(token: string): Promise<SessionRow> {
   const tokenHash = await hashToken(token)
-  const { data, error } = await admin
+  const columns = 'id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)'
+  const { data: canonical, error: canonicalError } = await admin
     .from('wordle_game_sessions')
-    .select('id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_word_id, daily_date, status, attempt_count, started_at, completed_at, expires_at, wordle_words!inner(public_key, normalized_word)')
+    .select(columns)
     .eq('token_hash', tokenHash)
     .maybeSingle()
+  if (canonicalError) throw new RequestError('temporary_server_failure', canonicalError.message, 503)
+  if (canonical) return canonical as unknown as SessionRow
 
-  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
-  if (!data) throw new RequestError('invalid_session', 'This game session is not valid.', 401)
+  const { data: access, error: accessError } = await admin.from('wordle_game_session_tokens')
+    .select('session_id').eq('token_hash', tokenHash).maybeSingle()
+  if (accessError) throw new RequestError('temporary_server_failure', accessError.message, 503)
+  if (!access) throw new RequestError('invalid_session', 'This game session is not valid.', 401)
+  await admin.from('wordle_game_session_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
+  const { data, error } = await admin.from('wordle_game_sessions').select(columns).eq('id', access.session_id).single()
+  if (error || !data) throw new RequestError('temporary_server_failure', error?.message ?? 'This game session is not valid.', 503)
   return data as unknown as SessionRow
 }
 
+async function issueWordleAccessToken(sessionId: string, browserIdHash: string | null): Promise<string> {
+  const token = createSessionToken()
+  const { error } = await admin.from('wordle_game_session_tokens').insert({
+    session_id: sessionId,
+    token_hash: await hashToken(token),
+    browser_id_hash: browserIdHash,
+  })
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  return token
+}
+
+async function issueConnectionsAccessToken(sessionId: string, browserIdHash: string | null): Promise<string> {
+  const token = createSessionToken()
+  const { error } = await admin.from('connections_game_session_tokens').insert({
+    session_id: sessionId,
+    token_hash: await hashToken(token),
+    browser_id_hash: browserIdHash,
+  })
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  return token
+}
+
 async function publicState(session: SessionRow) {
+  if (session.status === 'active' && new Date(session.expires_at) <= new Date()) {
+    const completedAt = new Date().toISOString()
+    const { data: expiryRow, error: expiryError } = await admin.from('wordle_game_sessions')
+      .update({ status: 'expired', completed_at: completedAt })
+      .eq('id', session.id)
+      .eq('status', 'active')
+      .select('status, completed_at')
+      .maybeSingle()
+    if (expiryError) throw new RequestError('temporary_server_failure', expiryError.message, 503)
+    if (expiryRow) {
+      session.status = expiryRow.status as SessionRow['status']
+      session.completed_at = expiryRow.completed_at
+    } else {
+      const { data: current, error: currentError } = await admin.from('wordle_game_sessions')
+        .select('status, completed_at').eq('id', session.id).single()
+      if (currentError) throw new RequestError('temporary_server_failure', currentError.message, 503)
+      session.status = current.status as SessionRow['status']
+      session.completed_at = current.completed_at
+    }
+  }
+
   const { data: attempts, error } = await admin
     .from('wordle_attempts')
     .select('sequence_number, guess_word, tile_result')
@@ -128,12 +180,23 @@ async function publicState(session: SessionRow) {
     answer: session.status === 'won' || session.status === 'lost'
       ? session.wordle_words?.normalized_word ?? null
       : null,
+    accountOwned: Boolean(session.auth_user_id),
+    accountUserId: session.auth_user_id,
   }
 
   return state
 }
 
-async function connectionsState(session: ConnectionsSessionRow) {
+async function connectionsState(session: ConnectionsSessionRow, tokenHash?: string) {
+  if (tokenHash && session.status === 'active' && new Date(session.expires_at) <= new Date()) {
+    const { data: expiryStatus, error: expiryError } = await admin.rpc('connections_expire_session', { p_token_hash: tokenHash })
+    if (expiryError) throw new RequestError('temporary_server_failure', expiryError.message, 503)
+    if (typeof expiryStatus === 'string' && expiryStatus !== 'active') {
+      session.status = expiryStatus as ConnectionsSessionRow['status']
+      session.completed_at = new Date().toISOString()
+    }
+  }
+
   const [{ data: puzzle, error: puzzleError }, { data: attempts, error: attemptsError }] = await Promise.all([
     admin.from('connections_daily_puzzles').select('public_key, london_date, words, groups').eq('id', session.puzzle_id).single(),
     admin.from('connections_attempts').select('selected_words, result, group_data').eq('session_id', session.id).order('sequence_number', { ascending: true }),
@@ -161,37 +224,57 @@ async function connectionsState(session: ConnectionsSessionRow) {
     mistakeCount: session.mistake_count,
     maxMistakes: 4,
     status: session.status,
+    accountOwned: Boolean(session.auth_user_id),
+    accountUserId: session.auth_user_id,
   }
 }
 
 const connectionsSessionColumns = 'id, token_hash, browser_id_hash, auth_user_id, mode, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at'
 
 async function startConnections(body: Record<string, unknown>, request: Request) {
+  if (!await consumeRateLimit(admin, request, 'connections-start', 20, 60)) {
+    throw new RequestError('rate_limited', 'Too many Connections starts. Try again shortly.', 429)
+  }
   const mode = body.mode === 'archive' ? 'archive' : 'daily'
   const currentDate = londonDate()
   const authUser = mode === 'archive' ? await requireConfirmedUser(request) : await optionalConfirmedUser(request)
   const puzzleDate = mode === 'archive' ? requireString(body.archiveDate, 'archive_date', 10) : currentDate
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(puzzleDate) || (mode === 'archive' && puzzleDate >= currentDate)) {
+  if (!isCalendarDate(puzzleDate) || (mode === 'archive' && puzzleDate >= currentDate)) {
     throw new RequestError('archive_date_unavailable', 'Only past Connections puzzles are available in the archive.', 422)
   }
   const providedToken = body.sessionToken
   if (typeof providedToken === 'string' && providedToken.length > 0) {
     const tokenHash = await hashToken(providedToken)
-    const { data: session, error } = await admin
-      .from('connections_game_sessions')
-      .select(connectionsSessionColumns)
-      .eq('token_hash', tokenHash)
-      .maybeSingle()
-    if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+    const { data: canonical, error: canonicalError } = await admin.from('connections_game_sessions')
+      .select(connectionsSessionColumns).eq('token_hash', tokenHash).maybeSingle()
+    if (canonicalError) throw new RequestError('temporary_server_failure', canonicalError.message, 503)
+    let session = canonical
+    if (!session) {
+      const { data: access, error: accessError } = await admin.from('connections_game_session_tokens')
+        .select('session_id').eq('token_hash', tokenHash).maybeSingle()
+      if (accessError) throw new RequestError('temporary_server_failure', accessError.message, 503)
+      if (access) {
+        const { data: accessSession, error: accessSessionError } = await admin.from('connections_game_sessions')
+          .select(connectionsSessionColumns).eq('id', access.session_id).single()
+        if (accessSessionError) throw new RequestError('temporary_server_failure', accessSessionError.message, 503)
+        session = accessSession
+        await admin.from('connections_game_session_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
+      }
+    }
     if (session) {
       if (session.mode !== mode) throw new RequestError('invalid_session', 'This Connections session belongs to another mode.', 409)
       if (session.auth_user_id && session.auth_user_id !== authUser?.id) throw new RequestError('invalid_session', 'This Connections session belongs to another account.', 401)
       if (authUser && !session.auth_user_id) {
-        const { error: claimError } = await admin.from('connections_game_sessions').update({ auth_user_id: authUser.id }).eq('id', session.id).is('auth_user_id', null)
+        const { data: claimedId, error: claimError } = await admin.rpc('connections_claim_or_find_session', { p_session_id: session.id, p_auth_user_id: authUser.id })
         if (claimError) throw new RequestError('temporary_server_failure', claimError.message, 503)
+        if (claimedId !== session.id) {
+          const accessToken = await issueConnectionsAccessToken(claimedId, await hashOptionalIdentifier(body.browserId))
+          const accessSession = await findConnectionsSession(accessToken)
+          return { sessionToken: accessToken, connections: { state: await connectionsState(accessSession, await hashToken(accessToken)) } }
+        }
         session.auth_user_id = authUser.id
       }
-      return { sessionToken: providedToken, connections: { state: await connectionsState(session as ConnectionsSessionRow) } }
+      return { sessionToken: providedToken, connections: { state: await connectionsState(session as ConnectionsSessionRow, await hashToken(providedToken)) } }
     }
   }
 
@@ -203,12 +286,10 @@ async function startConnections(body: Record<string, unknown>, request: Request)
     if (existing) {
       const replacementToken = createSessionToken()
       const replacementHash = await hashToken(replacementToken)
-      const { error: tokenError } = await admin.from('connections_game_sessions')
-        .update({ token_hash: replacementHash, browser_id_hash: browserIdHash }).eq('id', existing.id)
+      const { error: tokenError } = await admin.from('connections_game_session_tokens')
+        .insert({ session_id: existing.id, token_hash: replacementHash, browser_id_hash: browserIdHash })
       if (tokenError) throw new RequestError('temporary_server_failure', tokenError.message, 503)
-      existing.token_hash = replacementHash
-      existing.browser_id_hash = browserIdHash
-      return { sessionToken: replacementToken, connections: { state: await connectionsState(existing as ConnectionsSessionRow) } }
+      return { sessionToken: replacementToken, connections: { state: await connectionsState(existing as ConnectionsSessionRow, replacementHash) } }
     }
   }
   if (browserIdHash) {
@@ -248,10 +329,13 @@ async function startConnections(body: Record<string, unknown>, request: Request)
     .select(connectionsSessionColumns)
     .single()
   if (error || !created) throw new RequestError('temporary_server_failure', error?.message ?? 'Could not create Connections game.', 503)
-  return { sessionToken: token, connections: { state: await connectionsState(created as ConnectionsSessionRow) } }
+  return { sessionToken: token, connections: { state: await connectionsState(created as ConnectionsSessionRow, tokenHash) } }
 }
 
 async function submitConnections(body: Record<string, unknown>, request: Request) {
+  if (!await consumeRateLimit(admin, request, 'connections-submit', 120, 60)) {
+    throw new RequestError('rate_limited', 'Too many Connections submissions. Try again shortly.', 429)
+  }
   const token = requireString(body.sessionToken, 'session_token', 256)
   const selectedWords = body.words
   const idempotencyKey = requireString(body.idempotencyKey, 'idempotency_key', 128)
@@ -279,27 +363,44 @@ async function submitConnections(body: Record<string, unknown>, request: Request
       puzzle_unavailable: ['This puzzle is temporarily unavailable.', 503],
     }
     const [message, status] = knownErrors[error.message] ?? ['The selection could not be checked.', 503]
-    throw new RequestError(error.message, message, status)
+    throw new RequestError(knownErrors[error.message] ? error.message : 'temporary_server_failure', message, status)
+  }
+  if (data && typeof data === 'object' && (data as { error?: string }).error) {
+    const code = (data as { error: string }).error
+    const knownErrors: Record<string, [string, number]> = {
+      expired_session: ['This Connections session has expired.', 410],
+    }
+    const [message, status] = knownErrors[code] ?? ['The selection could not be checked.', 503]
+    throw new RequestError(code, message, status)
   }
   const latest = await findConnectionsSession(token)
   return {
     sessionToken: token,
     connections: {
       result: data,
-      state: await connectionsState(latest),
+      state: await connectionsState(latest, await hashToken(token)),
     },
   }
 }
 
 async function findConnectionsSession(token: string): Promise<ConnectionsSessionRow> {
+  const tokenHash = await hashToken(token)
   const { data, error } = await admin
     .from('connections_game_sessions')
     .select(connectionsSessionColumns)
-    .eq('token_hash', await hashToken(token))
+    .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
-  if (!data) throw new RequestError('invalid_session', 'This Connections session is not valid.', 401)
-  return data as ConnectionsSessionRow
+  if (data) return data as ConnectionsSessionRow
+  const { data: access, error: accessError } = await admin.from('connections_game_session_tokens')
+    .select('session_id').eq('token_hash', tokenHash).maybeSingle()
+  if (accessError) throw new RequestError('temporary_server_failure', accessError.message, 503)
+  if (!access) throw new RequestError('invalid_session', 'This Connections session is not valid.', 401)
+  await admin.from('connections_game_session_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', tokenHash)
+  const { data: session, error: sessionError } = await admin.from('connections_game_sessions')
+    .select(connectionsSessionColumns).eq('id', access.session_id).single()
+  if (sessionError || !session) throw new RequestError('temporary_server_failure', sessionError?.message ?? 'This Connections session is not valid.', 503)
+  return session as ConnectionsSessionRow
 }
 
 async function connectionsStats(request: Request) {
@@ -307,7 +408,7 @@ async function connectionsStats(request: Request) {
   const { data, error } = await admin.from('connections_game_sessions')
     .select('london_date, status, mistake_count').eq('auth_user_id', authUser.id)
     .eq('mode', 'daily')
-    .in('status', ['won', 'lost']).order('london_date', { ascending: true }).limit(1000)
+    .in('status', ['won', 'lost', 'expired']).order('london_date', { ascending: true }).limit(1000)
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
   const dailyResults = Object.fromEntries((data ?? []).map((session) => [session.london_date, {
     date: session.london_date,
@@ -330,7 +431,7 @@ async function listConnectionsArchive(request: Request) {
     : await admin.from('connections_game_sessions').select('london_date, status')
       .eq('auth_user_id', authUser.id).eq('mode', 'archive').in('london_date', dates)
   if (sessionsError) throw new RequestError('temporary_server_failure', sessionsError.message, 503)
-  const statusByDate = new Map((sessions ?? []).map((session) => [session.london_date, session.status]))
+  const statusByDate = new Map((sessions ?? []).map((session) => [session.london_date, session.status === 'expired' ? 'lost' : session.status]))
   return { connectionsArchives: (puzzles ?? []).map((puzzle) => ({
     date: puzzle.london_date, puzzleId: puzzle.public_key, status: statusByDate.get(puzzle.london_date) ?? null,
   })) }
@@ -339,7 +440,7 @@ async function listConnectionsArchive(request: Request) {
 async function connectionsArchiveStats(request: Request) {
   const authUser = await requireConfirmedUser(request)
   const { data, error } = await admin.from('connections_game_sessions').select('status, mistake_count')
-    .eq('auth_user_id', authUser.id).eq('mode', 'archive').in('status', ['won', 'lost']).limit(1000)
+     .eq('auth_user_id', authUser.id).eq('mode', 'archive').in('status', ['won', 'lost', 'expired']).limit(1000)
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
   const mistakeDistribution = Array.from({ length: 5 }, () => 0)
   for (const session of data ?? []) if (session.status === 'won') mistakeDistribution[session.mistake_count] += 1
@@ -349,6 +450,9 @@ async function connectionsArchiveStats(request: Request) {
 }
 
 async function startSession(body: Record<string, unknown>, request: Request) {
+  if (!await consumeRateLimit(admin, request, 'wordle-start', 20, 60)) {
+    throw new RequestError('rate_limited', 'Too many game starts. Try again shortly.', 429)
+  }
   const mode = body.mode
   if (mode !== 'daily' && mode !== 'unlimited' && mode !== 'archive') {
     throw new RequestError('invalid_mode', 'The game mode is invalid.', 400)
@@ -366,14 +470,14 @@ async function startSession(body: Record<string, unknown>, request: Request) {
     } else if (session.auth_user_id && session.auth_user_id !== authUser?.id) {
       throw new RequestError('invalid_session', 'This game session belongs to another account.', 401)
     } else if (authUser && !session.auth_user_id) {
-      const { error: claimError } = await admin.from('wordle_game_sessions').update({ auth_user_id: authUser.id }).eq('id', session.id).is('auth_user_id', null)
+      const { data: claimedId, error: claimError } = await admin.rpc('wordle_claim_or_find_session', { p_session_id: session.id, p_auth_user_id: authUser.id })
       if (claimError) throw new RequestError('temporary_server_failure', claimError.message, 503)
+      if (claimedId !== session.id) {
+        const accessToken = await issueWordleAccessToken(claimedId, await hashOptionalIdentifier(body.browserId))
+        const accessSession = await findSession(accessToken)
+        return { sessionToken: accessToken, state: await publicState(accessSession) }
+      }
       session.auth_user_id = authUser.id
-    }
-
-    if (session.status === 'active' && new Date(session.expires_at) < new Date()) {
-      await admin.from('wordle_game_sessions').update({ status: 'expired' }).eq('id', session.id)
-      session.status = 'expired'
     }
 
     return { sessionToken: token, state: await publicState(session) }
@@ -394,9 +498,8 @@ async function startSession(body: Record<string, unknown>, request: Request) {
       if (owned) {
         const replacementToken = createSessionToken()
         const replacementHash = await hashToken(replacementToken)
-        const { error: replaceError } = await admin.from('wordle_game_sessions').update({ token_hash: replacementHash, browser_id_hash: browserIdHash }).eq('id', owned.id)
-        if (replaceError) throw new RequestError('temporary_server_failure', replaceError.message, 503)
-        owned.token_hash = replacementHash
+        const { error: tokenError } = await admin.from('wordle_game_session_tokens').insert({ session_id: owned.id, token_hash: replacementHash, browser_id_hash: browserIdHash })
+        if (tokenError) throw new RequestError('temporary_server_failure', tokenError.message, 503)
         return { sessionToken: replacementToken, state: await publicState(owned as unknown as SessionRow) }
       }
     }
@@ -436,7 +539,7 @@ async function startSession(body: Record<string, unknown>, request: Request) {
     puzzleWordId = assignment.answer_word_id
   } else if (mode === 'archive') {
     const archiveDate = requireString(body.archiveDate, 'archive_date', 10)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(archiveDate)) {
+    if (!isCalendarDate(archiveDate)) {
       throw new RequestError('invalid_archive_date', 'The archive date is invalid.', 400)
     }
     const currentDate = londonDate()
@@ -467,13 +570,9 @@ async function startSession(body: Record<string, unknown>, request: Request) {
         // token is only returned after the user has been verified above.
         const replacementToken = createSessionToken()
         const replacementHash = await hashToken(replacementToken)
-        const { error: tokenError } = await admin
-          .from('wordle_game_sessions')
-          .update({ token_hash: replacementHash, browser_id_hash: browserIdHash })
-          .eq('id', existingSession.id)
+        const { error: tokenError } = await admin.from('wordle_game_session_tokens')
+          .insert({ session_id: existingSession.id, token_hash: replacementHash, browser_id_hash: browserIdHash })
         if (tokenError) throw new RequestError('temporary_server_failure', tokenError.message, 503)
-        existingSession.token_hash = replacementHash
-        existingSession.browser_id_hash = browserIdHash
         return { sessionToken: replacementToken, state: await publicState(existingSession as unknown as SessionRow) }
       }
     }
@@ -492,12 +591,13 @@ async function startSession(body: Record<string, unknown>, request: Request) {
     const recentPuzzleIds = Array.isArray(body.recentPuzzleIds)
       ? body.recentPuzzleIds.filter(isUuid).slice(0, 20)
       : []
-    const { data: currentAssignment } = await admin
+    const { data: currentAssignment, error: currentAssignmentError } = await admin
       .from('wordle_daily_assignments')
       .select('answer_word_id')
       .eq('london_date', londonDate())
       .eq('status', 'published')
       .maybeSingle()
+    if (currentAssignmentError) throw new RequestError('temporary_server_failure', 'The practice puzzle is temporarily unavailable.', 503)
     const excluded = new Set(recentPuzzleIds)
     const currentAnswerId = currentAssignment?.answer_word_id
 
@@ -537,6 +637,9 @@ async function startSession(body: Record<string, unknown>, request: Request) {
 }
 
 async function submitGuess(body: Record<string, unknown>, request: Request) {
+  if (!await consumeRateLimit(admin, request, 'wordle-guess', 120, 60)) {
+    throw new RequestError('rate_limited', 'Too many guesses. Try again shortly.', 429)
+  }
   const token = requireString(body.sessionToken, 'session_token', 256)
   const guess = requireString(body.guess, 'guess', 32)
   const idempotencyKey = requireString(body.idempotencyKey, 'idempotency_key', 128)
@@ -572,8 +675,8 @@ async function submitGuess(body: Record<string, unknown>, request: Request) {
       game_already_complete: ['This game is already complete.', 409],
       puzzle_unavailable: ['This puzzle is temporarily unavailable.', 503],
     }
-    const [message, status] = knownErrors[error.message] ?? ['The guess could not be submitted.', 503]
-    throw new RequestError(error.message, message, status)
+     const [message, status] = knownErrors[error.message] ?? ['The guess could not be submitted.', 503]
+     throw new RequestError(knownErrors[error.message] ? error.message : 'temporary_server_failure', message, status)
   }
 
   return { sessionToken: token, result: data }
@@ -606,7 +709,7 @@ async function listArchive(body: Record<string, unknown>, request: Request) {
     sessions = (data ?? []) as Array<{ daily_date: string; status: SessionRow['status'] }>
   }
 
-  const statusByDate = new Map(sessions.map((session) => [session.daily_date, session.status]))
+  const statusByDate = new Map(sessions.map((session) => [session.daily_date, session.status === 'expired' ? 'lost' : session.status]))
   return {
     archives: (assignments ?? []).map((assignment) => ({
       date: assignment.london_date,
@@ -623,7 +726,7 @@ async function archiveStats(request: Request) {
     .select('status, attempt_count')
     .eq('auth_user_id', authUser.id)
     .eq('mode', 'archive')
-    .in('status', ['won', 'lost'])
+    .in('status', ['won', 'lost', 'expired'])
     .limit(1000)
 
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
@@ -644,7 +747,7 @@ async function accountHistory(request: Request) {
   const authUser = await requireConfirmedUser(request)
   const { data, error } = await admin.from('wordle_game_sessions')
     .select('mode, daily_date, status, attempt_count, completed_at, wordle_words!inner(public_key)')
-    .eq('auth_user_id', authUser.id).in('mode', ['daily', 'unlimited']).in('status', ['won', 'lost'])
+    .eq('auth_user_id', authUser.id).in('mode', ['daily', 'unlimited']).in('status', ['won', 'lost', 'expired'])
     .order('completed_at', { ascending: false }).limit(500)
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
   return { accountHistory: (data ?? []).map((session) => ({
@@ -660,6 +763,11 @@ async function handle(request: Request): Promise<Response> {
   try {
     const body = await readBody(request)
     const action = body.action
+    if (['connections-stats', 'connections-archive-list', 'connections-archive-stats', 'archive-list', 'archive-stats', 'account-history'].includes(String(action))) {
+      if (!await consumeRateLimit(admin, request, `wordle-read-${String(action)}`, 60, 60)) {
+        throw new RequestError('rate_limited', 'Too many requests. Try again shortly.', 429)
+      }
+    }
     if (action === 'start') return json(await startSession(body, request))
     if (action === 'connections-start') return json(await startConnections(body, request))
     if (action === 'connections-submit') return json(await submitConnections(body, request))
@@ -674,6 +782,7 @@ async function handle(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof RequestError) return errorResponse(error.code, error.message, error.status)
     if (error instanceof Error && error.message === 'invalid_json') return errorResponse('invalid_json', 'The request body is not valid JSON.', 400)
+    if (error instanceof Error && error.message === 'request_body_too_large') return errorResponse('request_body_too_large', 'The request body is too large.', 413)
     console.error('wordle_function_error', error)
     return errorResponse('temporary_server_failure', 'The service is temporarily unavailable.', 503)
   }

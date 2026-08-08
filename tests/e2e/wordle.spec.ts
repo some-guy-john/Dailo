@@ -165,7 +165,7 @@ test.describe('protected Wordo play', () => {
     await expect(stats).toContainText('No streak')
   })
 
-  test('opens the statistics dialog after solving', async ({ page }) => {
+  test('reports a solved board inline and opens statistics on request', async ({ page }) => {
     await page.route('**/functions/v1/wordle', async (route) => {
       const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
       if (body.action === 'start') {
@@ -198,6 +198,11 @@ test.describe('protected Wordo play', () => {
     await page.keyboard.type('CRANE')
     await page.keyboard.press('Enter')
 
+    const strip = page.locator('.result-strip')
+    await expect(strip).toContainText('Solved in 1 guess.')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await strip.getByRole('button', { name: 'Stats' }).click()
     const dialog = page.getByRole('dialog', { name: 'Statistics' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText('Solved in 1 guess.')).toBeVisible()
@@ -222,9 +227,12 @@ test.describe('protected Wordo play', () => {
     await page.getByRole('button', { name: 'All games' }).click()
 
     await expect(page.getByRole('heading', { name: 'Dailo' })).toBeVisible()
-    await expect(page.getByText('Wordo Unlimited')).toBeVisible()
+    await expect(page.locator('.game-row')).toHaveCount(3)
+    await expect(page.getByText('Wordo', { exact: true })).toBeVisible()
     await expect(page.getByText('Connections')).toBeVisible()
     await expect(page.getByText('Wordo Versus')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Wordo Unlimited' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Wordo Archive' })).toBeVisible()
   })
 
   test('opens Wordo Versus from the hub with a durable hash route', async ({ page }) => {
@@ -407,9 +415,9 @@ test.describe('protected Wordo play', () => {
 
     await page.goto('/')
     await page.getByRole('button', { name: 'All games' }).click()
-    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: /Group the words into four/ }).click()
     const connections = page.getByRole('region', { name: 'Connections game' })
-    await expect(connections.getByRole('heading', { name: 'Connections' })).toBeVisible()
+    await expect(connections.getByRole('heading', { name: /Aug/ })).toBeVisible()
     await expect(connections.locator('.connections-word')).toHaveCount(8)
     await expect(connections.getByRole('group', { name: 'Word selection, 0 of 4 selected' })).toBeVisible()
     for (const word of ['APPLE', 'MANGO', 'PEAR', 'PLUM']) {
@@ -439,7 +447,7 @@ test.describe('protected Wordo play', () => {
 
     await page.goto('/')
     await page.getByRole('button', { name: 'All games' }).click()
-    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: /Group the words into four/ }).click()
     await expect(page.getByRole('alert')).toContainText('Connections is briefly unavailable.')
     await page.getByRole('button', { name: 'Retry' }).click()
     await expect(page.locator('.connections-word')).toHaveCount(4)
@@ -460,7 +468,7 @@ test.describe('protected Wordo play', () => {
     })
     await page.goto('/')
     await page.getByRole('button', { name: 'All games' }).click()
-    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: /Group the words into four/ }).click()
     await expect(page.locator('.connections-word')).toHaveCount(16)
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(0)
@@ -499,7 +507,7 @@ test.describe('protected Wordo play', () => {
 
     await page.goto('/')
     await page.getByRole('button', { name: 'All games' }).click()
-    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: /Group the words into four/ }).click()
     await page.getByRole('button', { name: 'View results' }).click()
     const dialog = page.getByRole('dialog', { name: 'Connections statistics' })
     await expect(dialog.getByText('Played').locator('..').getByText('1')).toBeVisible()
@@ -541,12 +549,12 @@ test.describe('protected Wordo play', () => {
 
     await page.goto('/')
     await page.getByRole('button', { name: 'All games' }).click()
-    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: /Group the words into four/ }).click()
     await page.getByRole('button', { name: 'Browse archive' }).click()
     const archive = page.getByRole('region', { name: 'Connections archive' })
     await expect(archive.getByRole('heading', { name: 'Connections Archive' })).toBeVisible()
     await archive.getByRole('button', { name: /Fri 7 Aug/ }).click()
-    await expect(page.getByRole('heading', { name: /Connections · Fri 7 Aug/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Fri 7 Aug/ })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Play today' })).toBeVisible()
   })
 

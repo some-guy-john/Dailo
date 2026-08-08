@@ -17,6 +17,8 @@ function endpoint() {
 
 async function call(body: Record<string, unknown>): Promise<VersusResponse> {
   let response: Response
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15_000)
   try {
     response = await fetch(endpoint(), {
       method: 'POST',
@@ -26,9 +28,12 @@ async function call(body: Record<string, unknown>): Promise<VersusResponse> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
   } catch {
     throw new VersusServiceError('temporary_server_failure', 'The match service could not be reached.')
+  } finally {
+    window.clearTimeout(timeout)
   }
   let payload: VersusResponse
   try {

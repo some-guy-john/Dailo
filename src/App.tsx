@@ -6,6 +6,8 @@ import {
   loadPreferences,
   loadStats,
   loadTheme,
+  clearConnectionsSession,
+  clearSession,
   saveConnectionsSession,
   savePreferences,
   saveSession,
@@ -43,6 +45,7 @@ function App() {
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState('')
   const [archiveAuthRequired, setArchiveAuthRequired] = useState(false)
+  const [archiveReloadKey, setArchiveReloadKey] = useState(0)
   const [archiveStats, setArchiveStats] = useState<ArchiveStats>({ played: 0, wins: 0, distribution: [] })
   const [archiveStatsLoaded, setArchiveStatsLoaded] = useState(false)
   const [dialog, setDialog] = useState<Dialog>(null)
@@ -53,6 +56,7 @@ function App() {
   const [authNotice, setAuthNotice] = useState('')
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
+  const [authReady, setAuthReady] = useState(!supabase)
   const [accountHistory, setAccountHistory] = useState<AccountHistoryItem[]>([])
   const [accountHistoryLoaded, setAccountHistoryLoaded] = useState(false)
   const [isRecovery, setIsRecovery] = useState(false)
@@ -63,6 +67,8 @@ function App() {
   const [connectionsNotice, setConnectionsNotice] = useState('')
   const [connectionsLoading, setConnectionsLoading] = useState(false)
   const [connectionsSubmitting, setConnectionsSubmitting] = useState(false)
+  const [sessionAuthLocked, setSessionAuthLocked] = useState(false)
+  const [connectionsAuthLocked, setConnectionsAuthLocked] = useState(false)
   const [connectionsReloadKey, setConnectionsReloadKey] = useState(0)
   const [connectionsArchiveDate, setConnectionsArchiveDate] = useState<string | null>(null)
   const [connectionsArchiveOpen, setConnectionsArchiveOpen] = useState(false)
@@ -73,6 +79,7 @@ function App() {
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
   const [currentGuess, setCurrentGuess] = useState('')
   const [pendingGuess, setPendingGuess] = useState('')
+  const [announcement, setAnnouncement] = useState('')
   const [notice, setNotice] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -87,8 +94,18 @@ function App() {
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const dialogOpenerRef = useRef<HTMLElement | null>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
   const noticeTimerRef = useRef<number | undefined>(undefined)
   const connectionsGridRef = useRef<HTMLDivElement>(null)
+  const connectionsPendingIdRef = useRef<{ key: string; words: string } | null>(null)
+  const connectionsGenerationRef = useRef(0)
+  const previousUserIdRef = useRef<string | null>(null)
+  const sessionRef = useRef(session)
+  const connectionsSessionRef = useRef(connectionsSession)
+
+  useEffect(() => { sessionRef.current = session }, [session])
+  useEffect(() => { connectionsSessionRef.current = connectionsSession }, [connectionsSession])
 
   const dailyResults = stats.dailyResults
   const currentStreak = calculateCurrentStreak(dailyResults, today)
@@ -104,7 +121,7 @@ function App() {
   const displayedDistribution = mode === 'unlimited' ? unlimitedDistribution : distribution
   const displayedBestBucket = Math.max(1, ...displayedDistribution)
   const isFinished = session.status !== 'active'
-  const isBusy = isLoading || isSubmitting || !session.sessionToken
+  const isBusy = isLoading || isSubmitting || sessionAuthLocked || !session.sessionToken
   const hasLoadError = !isLoading && !session.sessionToken
   const archivePlayed = stats.archiveResults.length
   const archiveWins = stats.archiveResults.filter((result) => result.won).length
@@ -126,6 +143,8 @@ function App() {
   const displayedConnectionsWins = showingConnectionsArchiveStats ? connectionsArchiveStats.wins : connectionsWins
   const displayedConnectionsWinPercentage = displayedConnectionsPlayed === 0 ? 0 : Math.round((displayedConnectionsWins / displayedConnectionsPlayed) * 100)
   const displayedConnectionsDistribution = showingConnectionsArchiveStats ? connectionsArchiveStats.mistakeDistribution : connectionsMistakeDistribution
+  const wordoToday = dailyResults[today] ?? null
+  const connectionsToday = connectionsResults[today] ?? null
   const cloudDaily = accountHistory.filter((item) => item.mode === 'daily')
   const cloudUnlimited = accountHistory.filter((item) => item.mode === 'unlimited')
 
@@ -144,12 +163,16 @@ function App() {
   useEffect(() => { savePreferences(preferences) }, [preferences])
 
   useEffect(() => {
-    const syncRoute = () => {
-      const route = parseVersusRoute(window.location.hash)
-      setVersusRoute(route)
-      if (route) setScreen('versus')
-      else if (window.location.hash === '#/admin') setScreen('admin')
-    }
+      const syncRoute = () => {
+        const route = parseVersusRoute(window.location.hash)
+        setVersusRoute(route)
+        if (route) setScreen('versus')
+        else if (window.location.hash === '#/admin') setScreen('admin')
+        else {
+          setDialog(null)
+          setScreen('games')
+        }
+      }
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)
   }, [])
@@ -189,15 +212,19 @@ function App() {
         setArchiveError(error instanceof GameServiceError ? error.message : 'The archive could not be loaded.')
       })
     return () => { cancelled = true }
-  }, [screen, user?.id])
+  }, [screen, user?.id, archiveReloadKey])
 
   useEffect(() => {
     if (!user) {
       setArchiveStatsLoaded(false)
       setConnectionsCloudStatsLoaded(false)
+      setAccountHistory([])
+      setAccountHistoryLoaded(false)
       return
     }
     let cancelled = false
+    setAccountHistory([])
+    setAccountHistoryLoaded(false)
     void getArchiveStats()
       .then((nextStats) => {
         if (cancelled) return
@@ -228,10 +255,44 @@ function App() {
     if (!supabase) return
     let active = true
     void supabase.auth.getSession().then(({ data }) => {
-      if (active) setUser(data.session?.user ?? null)
+      if (active) {
+        previousUserIdRef.current = data.session?.user?.id ?? null
+        setUser(data.session?.user ?? null)
+        setAuthReady(true)
+      }
+    }).catch(() => {
+      if (active) setAuthReady(true)
     })
     const { data: listener } = supabase.auth.onAuthStateChange((event, sessionState) => {
-      setUser(sessionState?.user ?? null)
+      const nextUser = sessionState?.user ?? null
+      const previousUserId = previousUserIdRef.current
+      if (nextUser) previousUserIdRef.current = nextUser.id
+      setUser(nextUser)
+      const authenticatedAgain = event === 'SIGNED_IN' || event === 'USER_UPDATED'
+      if (nextUser && (previousUserId !== nextUser.id || authenticatedAgain)) {
+        if (sessionRef.current.accountOwned && previousUserId && previousUserId !== nextUser.id) {
+          clearSession(sessionRef.current.mode, sessionRef.current.date)
+          setSession(createEmptySession(sessionRef.current.mode, sessionRef.current.date ?? today))
+        }
+        if (connectionsSessionRef.current?.accountOwned && previousUserId && previousUserId !== nextUser.id) {
+          clearConnectionsSession(connectionsSessionRef.current.date, connectionsSessionRef.current.mode)
+          setConnectionsSession(null)
+        }
+        setSessionAuthLocked(false)
+        setConnectionsAuthLocked(false)
+        if (sessionRef.current.sessionToken) setReloadKey((value) => value + 1)
+        if (connectionsSessionRef.current?.sessionToken) setConnectionsReloadKey((value) => value + 1)
+      }
+      if (!nextUser) {
+        if (sessionRef.current.accountOwned && sessionRef.current.status === 'active') {
+          setSessionAuthLocked(true)
+          setNotice('Sign in again to continue this account-owned game.')
+        }
+        if (connectionsSessionRef.current?.accountOwned && connectionsSessionRef.current.status === 'active') {
+          setConnectionsAuthLocked(true)
+          setConnectionsNotice('Sign in again to continue this account-owned game.')
+        }
+      }
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecovery(true)
         setAuthMode('update')
@@ -247,6 +308,7 @@ function App() {
   useEffect(() => {
     let cancelled = false
     if (screen !== 'play') return () => { cancelled = true }
+    if (supabase && !authReady) return () => { cancelled = true }
     const gameDate = mode === 'archive' ? archiveDate : today
     if (mode === 'archive' && !gameDate) return () => { cancelled = true }
     const requestKey = `${mode}:${gameDate}:${reloadKey}`
@@ -289,56 +351,88 @@ function App() {
           EMPTY_KEYBOARD,
         ))
         setIsLoading(false)
-        if (nextSession.status !== 'active' && mode !== 'unlimited') setDialog('stats')
+        if (nextSession.status !== 'active') setStats((currentStats) => recordSession(currentStats, nextSession))
       })
       .catch((error: unknown) => {
         if (cancelled) return
         startRequestRef.current = null
         setIsLoading(false)
+        if (error instanceof GameServiceError && error.code === 'account_session_auth_required') {
+          setSessionAuthLocked(true)
+          setNotice('Sign in again to continue this account-owned game.')
+          return
+        }
         setNotice(error instanceof GameServiceError ? error.message : 'The game could not be loaded.')
       })
 
     return () => { cancelled = true }
-  }, [mode, today, archiveDate, reloadKey, screen])
+  }, [mode, today, archiveDate, reloadKey, screen, authReady])
 
   useEffect(() => {
+    const generation = ++connectionsGenerationRef.current
     if (screen !== 'connections' || connectionsArchiveOpen) return
+    if (supabase && !authReady) return
     let cancelled = false
+    if (!user && connectionsSessionRef.current?.accountOwned) {
+      setConnectionsAuthLocked(true)
+      setConnectionsNotice('Sign in again to continue this account-owned game.')
+      setConnectionsLoading(false)
+      return () => { cancelled = true }
+    }
     setConnectionsLoading(true)
     setConnectionsSession(null)
     setConnectionsSelected([])
     setConnectionsNotice('')
+    connectionsPendingIdRef.current = null
     const date = connectionsArchiveDate ?? today
     const connectionsMode = connectionsArchiveDate ? 'archive' : 'daily'
     void startConnections(date, false, connectionsMode)
       .then((nextSession) => {
-        if (cancelled) return
+        if (cancelled || generation !== connectionsGenerationRef.current) return
         setConnectionsSession(nextSession)
         saveConnectionsSession(nextSession)
         if (nextSession.status !== 'active') setStats((currentStats) => recordConnectionsSession(currentStats, nextSession))
         setConnectionsLoading(false)
       })
       .catch((error: unknown) => {
-        if (cancelled) return
+        if (cancelled || generation !== connectionsGenerationRef.current) return
         setConnectionsLoading(false)
+        if (error instanceof GameServiceError && error.code === 'account_session_auth_required') {
+          setConnectionsAuthLocked(true)
+          setConnectionsNotice('Sign in again to continue this account-owned game.')
+          return
+        }
         setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections could not be loaded.')
       })
     return () => { cancelled = true }
-  }, [screen, today, user?.id, connectionsArchiveDate, connectionsArchiveOpen, connectionsReloadKey])
+  }, [screen, today, user?.id, connectionsArchiveDate, connectionsArchiveOpen, connectionsReloadKey, authReady])
 
   useEffect(() => {
     if (screen !== 'connections' || !connectionsArchiveOpen) return
+    let cancelled = false
+    const generation = connectionsGenerationRef.current
     setConnectionsLoading(true)
     setConnectionsNotice('')
     void Promise.all([listConnectionsArchive(), getConnectionsArchiveStats()]).then(([puzzles, archiveStats]) => {
+      if (cancelled || generation !== connectionsGenerationRef.current) return
       setConnectionsArchivePuzzles(puzzles)
       setConnectionsArchiveStats(archiveStats)
       setConnectionsLoading(false)
     }).catch((error: unknown) => {
+      if (cancelled || generation !== connectionsGenerationRef.current) return
       setConnectionsLoading(false)
       setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections Archive could not be loaded.')
     })
+    return () => { cancelled = true }
   }, [screen, connectionsArchiveOpen, user?.id, connectionsReloadKey])
+
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [screen])
+
+  useEffect(() => {
+    if (screen === 'play') boardRef.current?.focus()
+  }, [mode])
 
   useEffect(() => {
     if (dialog) {
@@ -363,7 +457,25 @@ function App() {
         setDialog(null)
         return
       }
-      if (dialog || screen !== 'play' || event.metaKey || event.ctrlKey || event.altKey) return
+      if (dialog) {
+        if (event.key === 'Tab' && dialogRef.current) {
+          const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button, input, textarea, select, [href], [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('disabled'))
+          if (focusable.length > 0) {
+            const first = focusable[0]
+            const last = focusable[focusable.length - 1]
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+              event.preventDefault()
+              last.focus()
+            } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) {
+              event.preventDefault()
+              first.focus()
+            }
+          }
+        }
+        return
+      }
+      if (screen !== 'play' || event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.target instanceof HTMLElement && (event.target.matches('input, textarea, select, [contenteditable="true"]') || event.target.isContentEditable || (event.target.matches('button') && event.key === 'Enter'))) return
 
       if (event.key === 'Enter') {
         void submitGuess()
@@ -379,12 +491,12 @@ function App() {
   })
 
   function addLetter(letter: string) {
-    if (session.status !== 'active' || isBusy || currentGuess.length >= WORD_LENGTH) return
+    if (session.status !== 'active' || sessionAuthLocked || isBusy || currentGuess.length >= WORD_LENGTH) return
     setCurrentGuess((value) => `${value}${letter.toUpperCase()}`)
   }
 
   function removeLetter() {
-    if (session.status !== 'active' || isBusy) return
+    if (session.status !== 'active' || sessionAuthLocked || isBusy) return
     setCurrentGuess((value) => value.slice(0, -1))
   }
 
@@ -395,7 +507,7 @@ function App() {
   }
 
   async function submitGuess() {
-    if (session.status !== 'active' || isBusy) return
+    if (session.status !== 'active' || sessionAuthLocked || isBusy) return
     if (currentGuess.length < WORD_LENGTH) {
       rejectGuess('Not enough letters')
       return
@@ -414,9 +526,14 @@ function App() {
       setSession(nextSession)
       saveSession(nextSession)
       setPendingGuess('')
+      if (lastAttempt) setAnnouncement(`Guess ${nextSession.attempts.length}: ${lastAttempt.guess.split('').map((letter, index) => `${letter}, ${lastAttempt.result[index]}`).join('; ')}.`)
 
       if (nextSession.status === 'won' || nextSession.status === 'lost') {
         setStats((currentStats) => recordSession(currentStats, nextSession))
+        if (user) void getAccountHistory().then((history) => {
+          setAccountHistory(history)
+          setAccountHistoryLoaded(true)
+        }).catch(() => {})
         if (nextSession.mode === 'archive' && user) {
           void getArchiveStats().then((nextStats) => {
             setArchiveStats(nextStats)
@@ -426,7 +543,6 @@ function App() {
         setNotice(nextSession.status === 'won'
           ? PRAISE[Math.min(nextSession.attempts.length, PRAISE.length) - 1]
           : nextSession.answer ?? 'Out of guesses')
-        if (nextSession.mode !== 'unlimited') window.setTimeout(() => setDialog('stats'), 1600)
       } else {
         setNotice('')
       }
@@ -446,6 +562,7 @@ function App() {
     setScreen('play')
     setArchiveDate(null)
     setMode(nextMode)
+    window.setTimeout(() => boardRef.current?.focus(), 0)
   }
 
   function startAnotherUnlimited() {
@@ -520,6 +637,7 @@ function App() {
     setDialog(null)
     setScreen('archive')
     setArchiveDate(null)
+    setArchiveReloadKey((value) => value + 1)
   }
 
   function openConnections() {
@@ -547,6 +665,7 @@ function App() {
     setConnectionsSession(null)
     setConnectionsArchiveDate(null)
     setConnectionsArchiveOpen(true)
+    setScreen('connections')
   }
 
   function playConnectionsArchive(date: string) {
@@ -555,7 +674,7 @@ function App() {
   }
 
   function toggleConnectionsWord(word: string) {
-    if (!connectionsSession || connectionsSession.status !== 'active' || connectionsSubmitting) return
+    if (!connectionsSession || connectionsSession.status !== 'active' || connectionsAuthLocked || connectionsSubmitting) return
     setConnectionsNotice('')
     setConnectionsSelected((selected) => selected.includes(word)
       ? selected.filter((value) => value !== word)
@@ -563,16 +682,25 @@ function App() {
   }
 
   async function submitConnectionsSelection() {
-    if (!connectionsSession || connectionsSelected.length !== 4 || connectionsSubmitting) return
+    if (!connectionsSession || connectionsSelected.length !== 4 || connectionsAuthLocked || connectionsSubmitting) return
+    const wordsKey = connectionsSelected.map((word) => word.trim().toUpperCase()).sort().join('|')
+    const generation = connectionsGenerationRef.current
+    const submittedToken = connectionsSession.sessionToken
+    const pending = connectionsPendingIdRef.current
+    const idempotencyKey = pending?.words === wordsKey ? pending.key : crypto.randomUUID()
+    connectionsPendingIdRef.current = { key: idempotencyKey, words: wordsKey }
     setConnectionsSubmitting(true)
     try {
-      const response = await submitConnections(connectionsSession, connectionsSelected)
+      const response = await submitConnections(connectionsSession, connectionsSelected, idempotencyKey)
+      if (generation !== connectionsGenerationRef.current || connectionsSession?.sessionToken !== submittedToken) return
+      connectionsPendingIdRef.current = null
       setConnectionsSession(response.session)
       saveConnectionsSession(response.session)
       setConnectionsSelected([])
-      setConnectionsNotice(response.result.result === 'correct'
+      const connectionMessage = response.result.result === 'correct'
         ? `Group found${response.result.group ? `: ${response.result.group.label}` : ''}`
-        : response.result.result === 'one-away' ? 'One away' : 'Not quite')
+        : response.result.result === 'one-away' ? 'One away' : 'Not quite'
+      setConnectionsNotice(connectionMessage)
       if (response.session.status !== 'active') {
         setStats((currentStats) => recordConnectionsSession(currentStats, response.session))
         if (user) void getConnectionsStats().then((nextStats) => {
@@ -580,11 +708,11 @@ function App() {
           setConnectionsCloudStatsLoaded(true)
         }).catch(() => {})
         if (response.session.mode === 'archive') void getConnectionsArchiveStats().then(setConnectionsArchiveStats).catch(() => {})
-        window.setTimeout(() => setDialog('stats'), 900)
       } else if (response.result.result === 'correct') {
         window.setTimeout(() => connectionsGridRef.current?.querySelector<HTMLButtonElement>('button')?.focus(), 0)
       }
     } catch (error: unknown) {
+      if (generation !== connectionsGenerationRef.current || connectionsSession?.sessionToken !== submittedToken) return
       setConnectionsNotice(error instanceof GameServiceError ? error.message : 'The selection could not be checked.')
     } finally {
       setConnectionsSubmitting(false)
@@ -653,6 +781,8 @@ function App() {
     await supabase.auth.signOut()
     setIsRecovery(false)
     setDialog(null)
+    setAccountHistory([])
+    setAccountHistoryLoaded(false)
     if (screen === 'archive') setScreen('games')
   }
 
@@ -696,7 +826,7 @@ function App() {
       data-contrast={preferences.highContrast ? 'on' : 'off'}
       data-motion={preferences.reduceMotion ? 'reduced' : 'normal'}
     >
-      <header className="bar" data-screen={screen} data-size={screen === 'games' ? 'small' : 'normal'}>
+      <header className="bar" data-screen={screen}>
         <div className="bar-left">
           <span className="brand-stamp" aria-label="Dailo">D</span>
           <button className="icon-button" type="button" aria-label="All games" onClick={() => { setDialog(null); window.location.hash = ''; setVersusRoute(null); setScreen('games') }}>
@@ -713,7 +843,7 @@ function App() {
             </svg>
           </button>
         </div>
-        <h1>{screen === 'games' || screen === 'archive' || screen === 'admin' ? 'Dailo' : screen === 'connections' ? 'Connections' : screen === 'versus' ? 'Wordo Versus' : 'Wordo'}</h1>
+         <h1 ref={headingRef} tabIndex={-1}>{screen === 'games' || screen === 'archive' || screen === 'admin' ? 'Dailo' : screen === 'connections' ? 'Connections' : screen === 'versus' ? 'Wordo Versus' : 'Wordo'}</h1>
         <div className="bar-right">
           <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -744,56 +874,53 @@ function App() {
             </div>
 
             <div className="game-list">
-              <button className="game-row" type="button" onClick={() => openGame('daily')}>
-                <span className="game-thumb" aria-hidden="true">
-                  <i data-state="correct" /><i /><i /><i data-state="present" />
-                </span>
-                <span>
-                  <b>Wordo</b>
-                  <span className="game-note">Guess the word in six tries</span>
-                </span>
-                <span className="game-go">Play</span>
-              </button>
+              <div className="game-card">
+                <button className="game-row" type="button" onClick={() => openGame('daily')}>
+                  <span className="game-thumb" aria-hidden="true">
+                    <i data-state="correct" /><i /><i /><i data-state="present" />
+                  </span>
+                  <span>
+                    <b>Wordo</b>
+                    <span className="game-note">Guess the word in six tries</span>
+                    <span className="game-status" data-state={wordoToday ? (wordoToday.won ? 'won' : 'lost') : 'new'}>
+                      <i />{wordoToday ? (wordoToday.won ? `Solved in ${wordoToday.guesses} today` : 'Out of guesses today') : 'Not started today'}
+                    </span>
+                  </span>
+                  <span className="game-go">{wordoToday ? 'Review' : 'Play'}</span>
+                </button>
+                <div className="game-modes">
+                  <button type="button" aria-label="Wordo Unlimited" onClick={() => openGame('unlimited')}>Unlimited</button>
+                  <button type="button" aria-label="Wordo Archive" onClick={openArchive}>Archive</button>
+                </div>
+              </div>
 
-              <button className="game-row" type="button" onClick={() => openGame('unlimited')}>
-                <span className="game-thumb" aria-hidden="true">
-                  <i /><i data-state="present" /><i data-state="correct" /><i />
-                </span>
-                <span>
-                  <b>Wordo Unlimited</b>
-                  <span className="game-note">Endless puzzles, no streak at stake</span>
-                </span>
-                <span className="game-go">Play</span>
-              </button>
+              <div className="game-card">
+                <button className="game-row" type="button" onClick={openConnections}>
+                  <span className="game-thumb" aria-hidden="true"><i /><i /><i /><i /></span>
+                  <span>
+                    <b>Connections</b>
+                    <span className="game-note">Group the words into four</span>
+                    <span className="game-status" data-state={connectionsToday ? (connectionsToday.won ? 'won' : 'lost') : 'new'}>
+                      <i />{connectionsToday ? (connectionsToday.won ? 'Solved today' : 'Finished today') : 'Not started today'}
+                    </span>
+                  </span>
+                  <span className="game-go">{connectionsToday ? 'Review' : 'Play'}</span>
+                </button>
+                <div className="game-modes">
+                  <button type="button" aria-label="Connections Archive" onClick={openConnectionsArchive}>Archive</button>
+                </div>
+              </div>
 
-              <button className="game-row" type="button" onClick={openArchive}>
-                <span className="game-thumb" aria-hidden="true">
-                  <i /><i data-state="correct" /><i data-state="present" /><i data-state="correct" />
-                </span>
-                <span>
-                  <b>Wordo Archive</b>
-                  <span className="game-note">Replay past daily editions</span>
-                </span>
-                <span className="game-go">Browse</span>
-              </button>
-
-              <button className="game-row" type="button" onClick={openConnections}>
-                <span className="game-thumb" aria-hidden="true"><i /><i /><i /><i /></span>
-                <span>
-                  <b>Connections</b>
-                  <span className="game-note">Group the words into four</span>
-                </span>
-                <span className="game-go">Play</span>
-              </button>
-
-              <button className="game-row" type="button" onClick={openVersus}>
-                <span className="game-thumb versus-thumb" aria-hidden="true"><i data-state="correct" /><i /><i data-state="present" /><i /></span>
-                <span>
-                  <b>Wordo Versus</b>
-                  <span className="game-note">Challenge someone with a private link</span>
-                </span>
-                <span className="game-go">Create</span>
-              </button>
+              <div className="game-card">
+                <button className="game-row" type="button" onClick={openVersus}>
+                  <span className="game-thumb versus-thumb" aria-hidden="true"><i data-state="correct" /><i /><i data-state="present" /><i /></span>
+                  <span>
+                    <b>Wordo Versus</b>
+                    <span className="game-note">Challenge someone with a private link</span>
+                  </span>
+                  <span className="game-go">Create</span>
+                </button>
+              </div>
             </div>
 
             <p className="hub-foot">
@@ -806,11 +933,14 @@ function App() {
       ) : screen === 'connections' ? (
         <section className="screen connections-screen" aria-label={connectionsArchiveOpen ? 'Connections archive' : 'Connections game'}>
           <div className="connections-game">
-            <div className="connections-heading">
-              <span>Word groups</span>
-              <h2>{connectionsArchiveOpen ? 'Connections Archive' : connectionsArchiveDate ? `Connections · ${formatLondonDate(connectionsArchiveDate)}` : 'Connections'}</h2>
-              <p>{connectionsArchiveOpen ? 'Past editions, separate from your Daily streak.' : 'Find four groups of four. You have four mistakes.'}</p>
-              {!connectionsArchiveOpen && <button className="back-link" type="button" onClick={connectionsArchiveDate ? openConnections : openConnectionsArchive}>{connectionsArchiveDate ? 'Play today' : 'Browse archive'}</button>}
+            <div className="screen-head">
+              <div>
+                <h2>{connectionsArchiveOpen ? 'Connections Archive' : formatLondonDate(connectionsArchiveDate ?? today)}</h2>
+                <p>{connectionsArchiveOpen ? 'Past editions, separate from your Daily streak' : 'Find four groups of four · four mistakes allowed'}</p>
+              </div>
+              {connectionsArchiveOpen
+                ? <button className="back-link" type="button" onClick={openConnections}>Play today</button>
+                : <button className="back-link" type="button" aria-label={connectionsArchiveDate ? 'Play today' : 'Browse archive'} onClick={connectionsArchiveDate ? openConnections : openConnectionsArchive}>{connectionsArchiveDate ? 'Play today' : 'Archive'}</button>}
             </div>
             {connectionsLoading && <p className="connections-status" role="status">Loading {connectionsArchiveOpen || connectionsArchiveDate ? 'archive' : 'today’s'} puzzle…</p>}
             {!connectionsLoading && connectionsArchiveOpen && !connectionsNotice && (
@@ -826,18 +956,21 @@ function App() {
             {!connectionsLoading && !connectionsArchiveOpen && connectionsSession && (
               <>
                 <div className="connections-mistakes" aria-label={`${connectionsSession.mistakeCount} of ${connectionsSession.maxMistakes} mistakes used`}>
+                  <span aria-hidden="true">Mistakes</span>
                   {Array.from({ length: connectionsSession.maxMistakes }).map((_, index) => <i data-used={index < connectionsSession.mistakeCount} key={index} />)}
                 </div>
                 <div className="connections-groups">
                   {connectionsSession.solvedGroups.map((group) => (
-                    <div className="connections-group" data-difficulty={group.difficulty} key={group.key}>
-                      <strong>{group.label}</strong>
+                   <div className="connections-group" data-difficulty={group.difficulty} key={group.key}>
+                       <span className="group-difficulty">Difficulty {group.difficulty}</span>
+                       <strong>{group.label}</strong>
                       <span>{group.words.join(' · ')}</span>
                     </div>
                   ))}
                 </div>
                 {connectionsSession.status === 'active' ? (
                   <>
+                    {connectionsAuthLocked && <div className="error-bar" role="alert"><span>Sign in again to continue this account-owned game.</span><button type="button" onClick={openAccount}>Sign in</button></div>}
                     <div className="connections-grid" ref={connectionsGridRef} role="group" aria-label={`Word selection, ${connectionsSelected.length} of 4 selected`}>
                       {shuffleConnectionsWords(connectionsSession.words, connectionsSession.puzzleId)
                         .filter((word) => !connectionsSession.solvedGroups.some((group) => group.words.includes(word)))
@@ -868,13 +1001,14 @@ function App() {
       ) : screen === 'archive' ? (
         <section className="screen" aria-label="Wordo archive">
           <div className="archive-browser">
-            <div className="archive-heading">
+            <div className="screen-head">
+              <div>
+                <h2>Wordo Archive</h2>
+                <p>Past daily editions</p>
+              </div>
               <button className="back-link" type="button" onClick={() => setScreen('games')}>← All games</button>
-              <span>Replay desk</span>
-              <h2>Wordo Archive</h2>
-              <p>Past daily editions, separate from today’s streak.</p>
             </div>
-            {archiveLoading && <p className="archive-status">Loading past editions…</p>}
+             {archiveLoading && <p className="archive-status" role="status">Loading past editions…</p>}
             {archiveError && <div className="error-bar" role="alert"><span>{archiveError}</span>{archiveAuthRequired ? <button type="button" onClick={openAccount}>Sign in</button> : <button type="button" onClick={openArchive}>Retry</button>}</div>}
             {!archiveLoading && !archiveError && (
               <div className="archive-list">
@@ -908,15 +1042,18 @@ function App() {
           <nav className="mode-tabs" aria-label="Game mode">
             <button type="button" aria-pressed={mode === 'daily'} onClick={() => switchMode('daily')}>Daily</button>
             <button type="button" aria-pressed={mode === 'unlimited'} onClick={() => switchMode('unlimited')}>Unlimited</button>
-            {mode === 'archive' && <button type="button" aria-pressed="true" onClick={openArchive}>Archive</button>}
+            <span className="mode-tabs-spacer" />
+            <button type="button" aria-pressed={mode === 'archive'} onClick={openArchive}>Archive</button>
           </nav>
 
             <div className="board-area">
               <div className="board-card">
                 <div
                   className="board"
+                  ref={boardRef}
                   data-ready={!isLoading && Boolean(session.sessionToken)}
                   aria-label={`${session.attempts.length} of ${MAX_GUESSES} guesses used`}
+                  tabIndex={-1}
                 >
                   {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
                     const attempt = session.attempts[rowIndex]
@@ -956,10 +1093,17 @@ function App() {
               </div>
             </div>
 
+          <div className="play-foot">
           {hasLoadError && (
             <div className="error-bar" role="alert">
               <span>{notice || 'The puzzle could not be loaded.'}</span>
               <button type="button" onClick={retryLoad}>Retry</button>
+            </div>
+          )}
+          {sessionAuthLocked && (
+            <div className="error-bar" role="alert">
+              <span>Sign in again to continue this account-owned game.</span>
+              <button type="button" onClick={openAccount}>Sign in</button>
             </div>
           )}
 
@@ -970,9 +1114,18 @@ function App() {
             </div>
           )}
 
-          {mode === 'unlimited' && isFinished && (
-            <div className="unlimited-next" role="status">
-              <button className="primary-button" type="button" onClick={startAnotherUnlimited}>Next puzzle</button>
+          {isFinished && !hasLoadError && (
+            <div className="result-strip" role="status">
+              <div>
+                <b>{verdict}</b>
+                <span>{mode === 'unlimited' ? 'Unlimited never touches your streak' : `Next Wordo in ${dailyCountdown}`}</span>
+              </div>
+              <button type="button" onClick={() => setDialog('stats')}>Stats</button>
+              {mode === 'unlimited' ? (
+                <button type="button" data-emphasis="high" onClick={startAnotherUnlimited}>Next puzzle</button>
+              ) : (
+                <button type="button" data-emphasis="high" onClick={() => void shareResult()}>{shareLabel}</button>
+              )}
             </div>
           )}
 
@@ -1007,6 +1160,7 @@ function App() {
               </div>
             ))}
           </div>
+          </div>
         </section>
       )}
 
@@ -1015,6 +1169,7 @@ function App() {
           {statusMessage || ' '}
         </p>
       </div>
+      <p className="visually-hidden" aria-live="polite" aria-atomic="true">{announcement}</p>
 
       {dialog === 'account' && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDialog(null)}>

@@ -14,7 +14,7 @@ Release 1 is intentionally limited to polished daily puzzle games with:
 - Server-side protection of puzzle answers
 - Four-group Connections puzzles with protected group data
 
-Full account-backed Wordo history, multiplayer, crosswords, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1. Archive access uses a confirmed email/password account. Daily, Unlimited, and Connections remain playable anonymously; signed-in Connections players sync server-verified current and future Daily results.
+Full public profiles, leaderboards, chat, advertising, and social discovery are not part of Release 1. Archive access uses a confirmed email/password account. Daily, Unlimited, Connections, and private invite-only Versus remain playable anonymously; signed-in players sync server-verified history where the current implementation supports it.
 
 ---
 
@@ -89,9 +89,8 @@ Release 1 includes:
 
 Release 1 does not include:
 
-- Full account-backed Daily or Unlimited history
-- General cross-device synchronization outside authenticated Archive sessions
-- Multiplayer or Versus mode
+- Public multiplayer or matchmaking
+- General cross-device synchronization outside authenticated game sessions
 - Timers
 - Matchmaking
 - Public profiles
@@ -100,12 +99,12 @@ Release 1 does not include:
 - Chat
 - User-created puzzles
 - Crosswords
-- A graphical admin panel
+- Public-facing administration
 - Advertising
 - Analytics
 - Push notifications
 - Progressive Web App installation
-- Advanced anti-cheat guarantees
+- Advanced anti-cheat guarantees beyond server-authoritative validation
 
 Excluded features must not influence the Release 1 schema or architecture unless they create a clear, immediate requirement.
 
@@ -600,8 +599,11 @@ Apply basic limits to:
 - Guess submissions per browser identifier
 - Repeated invalid guesses
 - Requests from one network source where practical
+- Expensive authenticated history/stat reads and Versus polling
 
 Limits must be generous enough not to punish ordinary play.
+
+Rate-limit buckets are hashed and periodically cleaned up opportunistically; they are operational safeguards, not a claim of one-play-per-human enforcement.
 
 ### 10.5 Token Handling
 
@@ -616,9 +618,7 @@ Limits must be generous enough not to punish ordinary play.
 
 ## 11. Content Workflow
 
-Release 1 will not include a graphical admin panel.
-
-Puzzle content will be managed through a controlled import process using versioned JSON or CSV files and a validation script.
+Puzzle content is managed through controlled scripts and an allowlisted, audited admin panel for Connections draft operations. The public frontend never receives direct table access.
 
 The workflow is:
 
@@ -685,6 +685,12 @@ The interface must provide visible states for:
 - Recoverable network failure
 - Session expiration
 - Missing daily assignment
+- Multi-device token lookup and authenticated session claiming
+- Retired-answer session completion
+- Connections and Versus lifecycle expiry/concession
+- Published and archived content immutability
+- Atomic admin audit logging
+- Atomic rate-limit windows
 - Service unavailability
 
 A failed network request must not silently consume a local attempt.
@@ -793,6 +799,9 @@ Critical end-to-end flows:
 - Play entirely with a physical keyboard
 - Recover from a failed guess request
 - Display a useful service-error state
+- Resume an authenticated session from a second browser context
+- Verify account switching does not expose another account's session
+- Verify dialog focus containment and screen-reader status announcements
 
 ### 14.4 Manual Checks
 
@@ -839,6 +848,8 @@ The project should define:
 - A documented deployment rollback process
 - A simple service-health check
 - A maximum acceptable monthly hosting budget
+
+The deployment workflow runs frontend tests, content validation, local PostgreSQL migration lint, pgTAP database assertions, browser tests, and the production build. Database migration parity is checked against the linked project before manual or release deployment.
 
 Release 1 does not require a third-party analytics platform.
 

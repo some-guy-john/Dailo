@@ -18,8 +18,8 @@ function Board({ match, guess }: { match: VersusMatch; guess: string }) {
     {Array.from({ length: MAX_GUESSES }, (_, row) => {
       const attempt = match.attempts[row]
       const letters = attempt?.guess ?? (row === match.attempts.length ? guess : '')
-      return <div className="board-row" key={row}>{Array.from({ length: WORD_LENGTH }, (_, column) => (
-        <div className="tile" data-state={attempt?.result[column] ?? undefined} key={column}>{letters[column] ?? ''}</div>
+      return <div className="board-row" aria-label={`Guess ${row + 1}`} key={row}>{Array.from({ length: WORD_LENGTH }, (_, column) => (
+        <div className="tile" aria-label={`${letters[column] ?? 'empty'}, ${attempt?.result[column] ?? 'empty'}`} data-state={attempt?.result[column] ?? undefined} key={column}>{letters[column] ?? ''}</div>
       ))}</div>
     })}
   </div>
@@ -28,7 +28,7 @@ function Board({ match, guess }: { match: VersusMatch; guess: string }) {
 function OpponentRows({ match }: { match: VersusMatch }) {
   return <div className="opponent-progress" aria-label={`${match.opponentName ?? 'Opponent'} progress`}>
     <strong>{match.opponentName ?? 'Waiting for opponent'}</strong>
-    <div>{match.opponentRows.map((row, index) => <span className="opponent-row" key={index}>{row.map((state, tile) => <i data-state={state} key={tile} />)}</span>)}</div>
+    <div aria-live="polite">{match.opponentRows.map((row, index) => <span className="opponent-row" aria-label={`Opponent guess ${index + 1}: ${row.join(', ')}`} key={index}>{row.map((state, tile) => <i aria-label={state} data-state={state} key={tile} />)}</span>)}</div>
     <small>{match.opponentStatus ?? 'Not joined'}</small>
   </div>
 }
@@ -41,10 +41,26 @@ export function VersusScreen({ route, onRoute }: { route: VersusRoute; onRoute: 
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [copyLabel, setCopyLabel] = useState('Copy invite')
-  const pendingIdRef = useRef<string | null>(null)
+  const pendingIdRef = useRef<{ key: string; guess: string } | null>(null)
+  const stateRequestRef = useRef(0)
+  const mutationVersionRef = useRef(0)
+  const pollingBusyRef = useRef(false)
+  const mutationBusyRef = useRef(false)
 
   useEffect(() => {
-    if (route.kind !== 'match') return
+    const requestId = ++stateRequestRef.current
+    if (route.kind !== 'match') {
+      setMatch(null)
+      setGuess('')
+      setNotice('')
+      pendingIdRef.current = null
+      setInviteToken(route.kind === 'invite' ? route.inviteToken : '')
+      return
+    }
+
+    setMatch(null)
+    setGuess('')
+    pendingIdRef.current = null
     const saved = loadVersusMatch(route.publicKey)
     if (!saved) {
       setNotice('This browser does not have a participant session for that match.')
@@ -52,27 +68,47 @@ export function VersusScreen({ route, onRoute }: { route: VersusRoute; onRoute: 
     }
     setMatch(saved)
     void getVersusState(saved.participantToken).then((nextState) => {
+      if (requestId !== stateRequestRef.current) return
       const next = { ...nextState, inviteToken: saved.inviteToken }
       setMatch(next); setInviteToken(next.inviteToken ?? ''); saveVersusMatch(next)
     }).catch((error: unknown) => {
+      if (requestId !== stateRequestRef.current) return
       setNotice(error instanceof VersusServiceError ? error.message : 'The match could not be restored.')
     })
   }, [route])
 
   useEffect(() => {
     if (!match || !['waiting', 'active'].includes(match.status)) return
-    const refresh = () => void getVersusState(match.participantToken).then((nextState) => {
-      const next = { ...nextState, inviteToken: match.inviteToken }
-      setMatch(next); saveVersusMatch(next)
-    }).catch(() => {})
+    const participantToken = match.participantToken
+    const refresh = () => {
+      if (pollingBusyRef.current || mutationBusyRef.current) return
+      const requestId = ++stateRequestRef.current
+      const mutationVersion = mutationVersionRef.current
+      pollingBusyRef.current = true
+      void getVersusState(participantToken).then((nextState) => {
+        if (requestId !== stateRequestRef.current || mutationVersion !== mutationVersionRef.current) return
+        const next = { ...nextState, inviteToken: match.inviteToken }
+        setMatch(next); saveVersusMatch(next)
+      }).catch((error: unknown) => {
+        if (requestId === stateRequestRef.current && !mutationBusyRef.current) {
+          setNotice(error instanceof VersusServiceError ? error.message : 'The match could not be refreshed.')
+        }
+      }).finally(() => { pollingBusyRef.current = false })
+    }
     const interval = window.setInterval(refresh, 3000)
     window.addEventListener('focus', refresh)
-    return () => { window.clearInterval(interval); window.removeEventListener('focus', refresh) }
+    return () => {
+      ++stateRequestRef.current
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refresh)
+    }
   }, [match?.participantToken, match?.status])
 
   useEffect(() => {
     function keydown(event: KeyboardEvent) {
       if (!match || match.status !== 'active' || match.playerStatus !== 'playing' || busy || event.metaKey || event.ctrlKey || event.altKey) return
+      if (document.querySelector('.modal')) return
+      if (event.target instanceof HTMLElement && (event.target.matches('input, textarea, select, button') || event.target.isContentEditable)) return
       if (event.key === 'Enter') void submit()
       else if (event.key === 'Backspace' || event.key === 'Delete') setGuess((value) => value.slice(0, -1))
       else if (/^[A-Za-z]$/.test(event.key)) setGuess((value) => value.length < WORD_LENGTH ? value + event.key.toUpperCase() : value)
@@ -83,23 +119,31 @@ export function VersusScreen({ route, onRoute }: { route: VersusRoute; onRoute: 
 
   async function create() {
     if (!validName(name) || busy) { setNotice('Use 2–16 letters, numbers, spaces, hyphens, or underscores.'); return }
+    const requestId = stateRequestRef.current
     setBusy(true); setNotice('')
     try {
       const created = await createVersus(name.trim())
+      if (requestId !== stateRequestRef.current) return
       const next = { ...created.match, inviteToken: created.inviteToken }
       setMatch(next); setInviteToken(created.inviteToken); saveVersusMatch(next)
       onRoute({ kind: 'match', publicKey: created.match.publicKey })
-    } catch (error) { setNotice(error instanceof VersusServiceError ? error.message : 'The match could not be created.') }
+    } catch (error) {
+      if (requestId === stateRequestRef.current) setNotice(error instanceof VersusServiceError ? error.message : 'The match could not be created.')
+    }
     finally { setBusy(false) }
   }
 
   async function join() {
     if (!validName(name) || busy) { setNotice('Use 2–16 letters, numbers, spaces, hyphens, or underscores.'); return }
+    const requestId = stateRequestRef.current
     setBusy(true); setNotice('')
     try {
       const joined = await joinVersus(inviteToken, name.trim())
+      if (requestId !== stateRequestRef.current) return
       setMatch(joined); saveVersusMatch(joined); onRoute({ kind: 'match', publicKey: joined.publicKey })
-    } catch (error) { setNotice(error instanceof VersusServiceError ? error.message : 'The invitation could not be joined.') }
+    } catch (error) {
+      if (requestId === stateRequestRef.current) setNotice(error instanceof VersusServiceError ? error.message : 'The invitation could not be joined.')
+    }
     finally { setBusy(false) }
   }
 
@@ -112,30 +156,48 @@ export function VersusScreen({ route, onRoute }: { route: VersusRoute; onRoute: 
   async function submit() {
     if (!match || guess.length !== WORD_LENGTH || busy) { if (guess.length < WORD_LENGTH) setNotice('Not enough letters'); return }
     const submitted = guess
-    const idempotencyKey = pendingIdRef.current ?? crypto.randomUUID()
-    pendingIdRef.current = idempotencyKey
+    const pending = pendingIdRef.current
+    const idempotencyKey = pending?.guess === submitted ? pending.key : crypto.randomUUID()
+    pendingIdRef.current = { key: idempotencyKey, guess: submitted }
+    mutationVersionRef.current += 1
+    const requestId = ++stateRequestRef.current
+    mutationBusyRef.current = true
     setBusy(true); setNotice('')
     try {
       const next = await submitVersusGuess(match, submitted, idempotencyKey)
+      if (requestId !== stateRequestRef.current) return
       pendingIdRef.current = null; setMatch(next); saveVersusMatch(next); setGuess('')
-    } catch (error) { setNotice(error instanceof VersusServiceError ? error.message : 'The guess could not be submitted.') }
-    finally { setBusy(false) }
+    } catch (error) {
+      if (requestId === stateRequestRef.current) setNotice(error instanceof VersusServiceError ? error.message : 'The guess could not be submitted.')
+    }
+    finally { mutationBusyRef.current = false; setBusy(false) }
   }
 
   async function concede() {
     if (!match || busy || !window.confirm('Concede this match?')) return
+    mutationVersionRef.current += 1
+    const requestId = ++stateRequestRef.current
+    mutationBusyRef.current = true
     setBusy(true)
-    try { const next = await concedeVersus(match); setMatch(next); saveVersusMatch(next) }
-    catch (error) { setNotice(error instanceof VersusServiceError ? error.message : 'The match could not be conceded.') }
-    finally { setBusy(false) }
+    try {
+      const next = await concedeVersus(match)
+      if (requestId !== stateRequestRef.current) return
+      setMatch(next); saveVersusMatch(next)
+    }
+    catch (error) {
+      if (requestId === stateRequestRef.current) setNotice(error instanceof VersusServiceError ? error.message : 'The match could not be conceded.')
+    }
+    finally { mutationBusyRef.current = false; setBusy(false) }
   }
 
   if (!match) return <section className="screen versus-screen" aria-label="Wordo Versus"><div className="versus-intro">
     <span>{route.kind === 'invite' ? 'Private invitation' : 'Private match'}</span>
     <h2>{route.kind === 'invite' ? 'You’ve been challenged' : route.kind === 'match' ? 'Match unavailable' : 'Wordo, head to head'}</h2>
     {route.kind !== 'match' && <><p>{route.kind === 'invite' ? 'Choose a display name, then explicitly claim the second seat.' : 'Create an untimed match and share one private invitation.'}</p>
-      <label className="versus-name">Display name<input value={name} maxLength={16} onChange={(event) => setName(event.target.value)} autoComplete="nickname" /></label>
-      <button className="primary-button" type="button" disabled={busy} onClick={() => void (route.kind === 'invite' ? join() : create())}>{route.kind === 'invite' ? 'Join match' : 'Create match'}</button></>}
+       <form onSubmit={(event) => { event.preventDefault(); void (route.kind === 'invite' ? join() : create()) }}>
+         <label className="versus-name">Display name<input value={name} maxLength={16} onChange={(event) => setName(event.target.value)} autoComplete="nickname" /></label>
+         <button className="primary-button" type="submit" disabled={busy}>{route.kind === 'invite' ? 'Join match' : 'Create match'}</button>
+       </form></>}
     {notice && <p className="connections-feedback" role="alert">{notice}</p>}
   </div></section>
 

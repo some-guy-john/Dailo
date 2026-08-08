@@ -1,10 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, errorResponse, json, readBody } from '../_shared/http.ts'
+import { consumeRateLimit } from '../_shared/rate-limit.ts'
+import { isCalendarDate } from '../_shared/wordle.ts'
 
 const admin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } })
 const allowedUsers = new Set((Deno.env.get('DAILO_ADMIN_USER_IDS') ?? '').split(',').map((value) => value.trim()).filter(Boolean))
 
-class RequestError extends Error { constructor(public code: string, message: string, public status: number) { super(message) } }
+class RequestError extends Error { constructor(public code: string, message: string, public status: number) { super(code === 'temporary_server_failure' ? 'The admin service is unavailable.' : message) } }
 
 async function requireAdmin(request: Request) {
   const token = request.headers.get('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]
@@ -18,7 +20,7 @@ async function requireAdmin(request: Request) {
 function validatePuzzle(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new RequestError('invalid_puzzle', 'Puzzle content must be an object.', 422)
   const puzzle = value as Record<string, unknown>
-  if (typeof puzzle.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(puzzle.date)) throw new RequestError('invalid_puzzle', 'Use a valid London date.', 422)
+  if (!isCalendarDate(puzzle.date)) throw new RequestError('invalid_puzzle', 'Use a valid London date.', 422)
   if (!Array.isArray(puzzle.groups) || puzzle.groups.length !== 4) throw new RequestError('invalid_puzzle', 'Provide four groups.', 422)
   const groups = puzzle.groups.map((value, index) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new RequestError('invalid_puzzle', `Group ${index + 1} is invalid.`, 422)
@@ -46,18 +48,18 @@ async function overview() {
 
 async function createConnectionsDraft(body: Record<string, unknown>, userId: string) {
   const puzzle = validatePuzzle(body.puzzle)
-  const { data, error } = await admin.from('connections_daily_puzzles').insert({ london_date: puzzle.date, words: puzzle.words, groups: puzzle.groups, status: 'draft' }).select('public_key, london_date, status').single()
+  const { data, error } = await admin.rpc('dailo_create_connections_draft', { p_auth_user_id: userId, p_london_date: puzzle.date, p_words: puzzle.words, p_groups: puzzle.groups })
   if (error) throw new RequestError(error.code === '23505' ? 'date_conflict' : 'temporary_server_failure', error.code === '23505' ? 'That date already has a Connections puzzle.' : error.message, error.code === '23505' ? 409 : 503)
-  await admin.from('dailo_admin_audit').insert({ auth_user_id: userId, action: 'create_draft', entity_type: 'connections', entity_key: puzzle.date, details: { publicKey: data.public_key } })
   return data
 }
 
 async function publishConnections(body: Record<string, unknown>, userId: string) {
-  if (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) throw new RequestError('invalid_date', 'Use a valid date.', 422)
-  const { data, error } = await admin.from('connections_daily_puzzles').update({ status: 'published', published_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('london_date', body.date).eq('status', 'draft').select('public_key, london_date, status').maybeSingle()
-  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
-  if (!data) throw new RequestError('draft_not_found', 'No draft exists for that date.', 404)
-  await admin.from('dailo_admin_audit').insert({ auth_user_id: userId, action: 'publish', entity_type: 'connections', entity_key: body.date, details: { publicKey: data.public_key } })
+  if (!isCalendarDate(body.date)) throw new RequestError('invalid_date', 'Use a valid date.', 422)
+  const { data, error } = await admin.rpc('dailo_publish_connections', { p_auth_user_id: userId, p_london_date: body.date })
+  if (error) {
+    if (error.message === 'draft_not_found') throw new RequestError('draft_not_found', 'No draft exists for that date.', 404)
+    throw new RequestError('temporary_server_failure', error.message, 503)
+  }
   return data
 }
 
@@ -66,6 +68,7 @@ async function handle(request: Request) {
   if (request.method !== 'POST') return errorResponse('method_not_allowed', 'Use POST.', 405)
   try {
     const user = await requireAdmin(request)
+    if (!await consumeRateLimit(admin, request, 'admin', 30, 60)) throw new RequestError('rate_limited', 'Too many admin requests. Try again shortly.', 429)
     const body = await readBody(request)
     if (body.action === 'overview') return json(await overview())
     if (body.action === 'connections-create-draft') return json({ puzzle: await createConnectionsDraft(body, user.id) })
@@ -74,6 +77,7 @@ async function handle(request: Request) {
   } catch (error) {
     if (error instanceof RequestError) return errorResponse(error.code, error.message, error.status)
     if (error instanceof Error && error.message === 'invalid_json') return errorResponse('invalid_json', 'The request body is invalid.', 400)
+    if (error instanceof Error && error.message === 'request_body_too_large') return errorResponse('request_body_too_large', 'The request body is too large.', 413)
     console.error('dailo_admin_error', error)
     return errorResponse('temporary_server_failure', 'The admin service is unavailable.', 503)
   }

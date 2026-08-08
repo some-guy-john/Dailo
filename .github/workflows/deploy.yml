@@ -3,12 +3,12 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -32,6 +32,20 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Validate content fixtures
+        run: |
+          npm run validate:content -- content/wordle-words.example.json
+          npm run validate:connections -- content/connections-puzzles.example.json
+
+      - name: Start local Postgres
+        run: npx supabase start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Validate database migrations
+        run: npx supabase db lint --local
+
+      - name: Run database tests
+        run: npx supabase test db --local supabase/tests
 
       - name: Install browser
         run: npx playwright install --with-deps chromium
@@ -64,12 +78,21 @@ jobs:
           path: dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     needs: build
     steps:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify deployed site
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "${{ steps.deployment.outputs.page_url }}"

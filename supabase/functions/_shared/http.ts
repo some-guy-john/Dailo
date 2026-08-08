@@ -2,6 +2,8 @@ export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Cache-Control': 'no-store',
+  Vary: 'Origin',
 }
 
 export function json(data: unknown, status = 200): Response {
@@ -16,10 +18,16 @@ export function errorResponse(code: string, message: string, status: number): Re
 }
 
 export async function readBody(request: Request): Promise<Record<string, unknown>> {
+  const maxBytes = 64 * 1024
+  const contentLength = Number(request.headers.get('content-length') ?? '')
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error('request_body_too_large')
   try {
-    const body = await request.json()
+    const raw = await request.text()
+    if (new TextEncoder().encode(raw).byteLength > maxBytes) throw new Error('request_body_too_large')
+    const body = JSON.parse(raw)
     return body && typeof body === 'object' ? body as Record<string, unknown> : {}
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'request_body_too_large') throw error
     throw new Error('invalid_json')
   }
 }

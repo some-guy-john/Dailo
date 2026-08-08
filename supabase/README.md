@@ -5,7 +5,7 @@ The Dailo Release 1 backend keeps Wordo answers and Connections group data behin
 ## Local Setup
 
 1. Install the Supabase CLI.
-2. Create a development project.
+2. Start the local Postgres stack with `supabase start` when running migrations locally.
 3. Apply the SQL migration in `migrations/`.
 4. Import reviewed Wordo content into `wordle_words`.
 5. Add published rows to `wordle_daily_assignments` using `Europe/London` calendar dates.
@@ -15,7 +15,11 @@ The Dailo Release 1 backend keeps Wordo answers and Connections group data behin
 9. Deploy `functions/dailo-admin`.
 10. Configure the frontend with the public Supabase URL and anon key only.
 
+Apply migrations before deploying functions. The current rollout order ends with `202608080009` through `202608080015`. Migration `202608080011` adds published-content immutability, safe retired-answer handling, transactional admin writes, and the service-role rate-limit RPC used by all functions. Migrations `202608080012` and `202608080013` remove the remaining SQL-lint warnings from the scoring function. Migration `202608080014` removes browser execution privileges from trigger-only functions. Migration `202608080015` adds stale rate-limit bucket cleanup.
+
 The Edge Function uses `SUPABASE_SERVICE_ROLE_KEY` server-side. Never put that value in the frontend, repository, or issue tracker.
+
+The local database lint and migration reset require Docker. CI runs `supabase db lint --local` before the frontend build; a local lint failure caused by a stopped Docker daemon is an environment issue, not a migration result.
 
 ## Function Contract
 
@@ -95,9 +99,9 @@ Connections submission:
 
 Connections returns the 16 playable words and solved groups, but does not return unsolved group labels or memberships until the puzzle is complete. A player has four mistakes.
 
-Each Connections group has one unique difficulty from 1 through 4. The database enforces a complete partition of 16 unique normalized words, protects published puzzle content from ordinary mutation, and permits the submission RPC only through the service-role Edge Function.
+Each Connections group has one unique difficulty from 1 through 4. The database enforces a complete partition of 16 unique normalized words, makes published and archived puzzle rows immutable, and permits the submission RPC only through the service-role Edge Function. Wordo published and archived assignments are also immutable; referenced answers may be retired without breaking existing sessions.
 
-When a confirmed user starts or resumes Connections, the server binds a session only after the player proves possession of its token or starts while authenticated. Verified completed Daily sessions provide cross-device Connections statistics through `connections-stats`. Browser-only historical summaries are never uploaded or treated as authoritative.
+When a confirmed user starts or resumes Connections, the server binds a session only after the player proves possession of its token or starts while authenticated. Verified completed Daily sessions provide cross-device Connections statistics through `connections-stats`. Browser-only historical summaries are never uploaded or treated as authoritative. Authenticated cross-device resumes receive an additional hashed device token; older browser tokens remain valid instead of being rotated away.
 
 Connections Archive uses `connections-archive-list`, `connections-archive-stats`, and `connections-start` with `mode: "archive"` plus an `archiveDate`. Only confirmed users may list, start, resume, or submit archive sessions. Archive sessions and statistics are stored separately and never affect Connections Daily streaks.
 
@@ -105,7 +109,7 @@ Connections Archive uses `connections-archive-list`, `connections-archive-stats`
 
 The separate `wordo-versus` function accepts `create`, `join`, `state`, `guess`, and `concede`. Creation returns distinct invitation and participant capabilities. The invitation hash may be shared, but participant tokens must stay in browser storage and must never appear in URLs.
 
-Matches activate only after the second player claims the invitation. Both players receive six guesses and 24 hours from activation. Caller responses include their own guesses and only coloured tile states for the opponent. The answer is returned only after completion, cancellation, or expiry. Fewest successful guesses wins; equal successful counts and dual failures draw. A solver wins on expiry when the opponent has not finished, otherwise an unsolved expired match is void.
+Matches activate only after the second player claims the invitation. Both players receive six guesses and 24 hours from activation. Caller responses include their own guesses and only coloured tile states for the opponent. The answer is returned only after a joined match completes normally or expires; cancelling an unclaimed invitation or conceding never reveals its answer. Fewest successful guesses wins; equal successful counts and dual failures draw. A solver wins on expiry when the opponent has not finished, otherwise an unsolved expired match is void.
 
 Versus answers are selected from active curated answers after excluding all draft and published Daily assignments. Match, player, and attempt tables deny direct browser access, while atomic lifecycle RPCs are executable only by the service role.
 
@@ -125,6 +129,8 @@ npx supabase functions deploy dailo-admin --project-ref imndxrsbavywbsnyreyz
 ```
 
 The first panel provides read-only Wordo schedule visibility plus Connections draft validation, creation, and explicit publication. It never grants direct table access, never replaces an existing date, and records create/publish actions in `dailo_admin_audit`. Published puzzle content remains protected by database immutability rules.
+
+Admin mutations and their audit records are committed in one database transaction. Edge Functions apply atomic per-IP request limits to starts, guesses, Versus creation/joining, and admin requests; oversized JSON bodies are rejected before parsing.
 
 ## Content Import
 

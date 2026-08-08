@@ -1,5 +1,5 @@
 import { isGuessFormatValid, normalizeGuess } from './rules'
-import { loadBrowserId, loadConnectionsSession, loadSession } from './storage'
+import { clearConnectionsSession, clearSession, loadBrowserId, loadConnectionsSession, loadSession } from './storage'
 import { supabase } from '../lib/supabase'
 import type { ConnectionsAttempt, ConnectionsGroup, ConnectionsSession, GameMode, GameSession, Stats } from './types'
 
@@ -11,6 +11,8 @@ type BackendState = {
   attemptCount: number
   attempts: GameSession['attempts']
   answer: string | null
+  accountOwned?: boolean
+  accountUserId?: string | null
 }
 
 type BackendResponse = {
@@ -42,7 +44,9 @@ type ConnectionsBackendState = {
   attempts: ConnectionsAttempt[]
   mistakeCount: number
   maxMistakes: number
-  status: ConnectionsSession['status']
+  status: ConnectionsSession['status'] | 'expired'
+  accountOwned?: boolean
+  accountUserId?: string | null
 }
 
 type ConnectionsBackendResult = {
@@ -104,8 +108,10 @@ function fromConnectionsState(state: ConnectionsBackendState, sessionToken: stri
     attempts: state.attempts,
     mistakeCount: state.mistakeCount,
     maxMistakes: state.maxMistakes,
-    status: state.status,
+    status: state.status === 'expired' ? 'lost' : state.status,
     startedAt: previous?.startedAt ?? new Date().toISOString(),
+    accountOwned: state.accountOwned,
+    accountUserId: state.accountUserId ?? previous?.accountUserId,
   }
 }
 
@@ -159,11 +165,22 @@ function fromBackendState(state: BackendState, sessionToken: string, previous?: 
     status: state.status === 'expired' || state.status === 'abandoned' ? 'lost' : state.status,
     startedAt: previous?.startedAt ?? new Date().toISOString(),
     completedAt: state.status === 'active' ? undefined : previous?.completedAt ?? new Date().toISOString(),
+    accountOwned: state.accountOwned,
+    accountUserId: state.accountUserId ?? previous?.accountUserId,
   }
 }
 
 export async function startGame(mode: GameMode, stats: Stats, date: string, forceNew = false): Promise<GameSession> {
-  const saved = forceNew ? null : loadSession(mode, mode === 'unlimited' ? null : date)
+  let saved = forceNew ? null : loadSession(mode, mode === 'unlimited' ? null : date)
+
+  if (saved?.accountOwned && supabase) {
+    const { data } = await supabase.auth.getSession()
+    if (!data.session) throw new GameServiceError('account_session_auth_required', 'Sign in again to continue this account-owned game.')
+    if (saved.accountUserId && saved.accountUserId !== data.session.user.id) {
+      clearSession(mode, mode === 'unlimited' ? null : date)
+      saved = null
+    }
+  }
 
   if (!isProtectedBackendConfigured) {
     throw new GameServiceError('configuration_missing', 'Connect Supabase before starting a protected game.')
@@ -184,7 +201,15 @@ export async function startGame(mode: GameMode, stats: Stats, date: string, forc
 }
 
 export async function startConnections(date: string, forceNew = false, mode: ConnectionsSession['mode'] = 'daily'): Promise<ConnectionsSession> {
-  const saved = forceNew ? null : loadConnectionsSession(date, mode)
+  let saved = forceNew ? null : loadConnectionsSession(date, mode)
+  if (saved?.accountOwned && supabase) {
+    const { data } = await supabase.auth.getSession()
+    if (!data.session) throw new GameServiceError('account_session_auth_required', 'Sign in again to continue this account-owned game.')
+    if (saved.accountUserId && saved.accountUserId !== data.session.user.id) {
+      clearConnectionsSession(date, mode)
+      saved = null
+    }
+  }
   if (!isProtectedBackendConfigured) {
     throw new GameServiceError('configuration_missing', 'Connect Supabase before starting Connections.')
   }
@@ -218,13 +243,13 @@ export async function getConnectionsStats(): Promise<ConnectionsStats> {
   return response.connections?.stats ?? { dailyResults: {} }
 }
 
-export async function submitConnections(session: ConnectionsSession, words: string[]): Promise<{ session: ConnectionsSession; result: ConnectionsBackendResult }> {
+export async function submitConnections(session: ConnectionsSession, words: string[], idempotencyKey: string = crypto.randomUUID()): Promise<{ session: ConnectionsSession; result: ConnectionsBackendResult }> {
   if (!session.sessionToken) throw new GameServiceError('invalid_session', 'This Connections session is not valid.')
   const response = await callBackend({
     action: 'connections-submit',
     sessionToken: session.sessionToken,
     words,
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey,
   })
   if (!response.connections?.state || !response.connections.result) {
     throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete Connections result.')

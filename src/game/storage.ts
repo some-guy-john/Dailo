@@ -61,6 +61,10 @@ export function saveSession(session: GameSession): void {
   write(getSessionKey(session.mode, session.date), session)
 }
 
+export function clearSession(mode: GameMode, date: string | null): void {
+  try { window.localStorage.removeItem(getSessionKey(mode, date)) } catch { /* best effort */ }
+}
+
 export function loadConnectionsSession(date: string, mode: ConnectionsSession['mode'] = 'daily'): ConnectionsSession | null {
   const session = read<ConnectionsSession>(`${connectionsSessionKey}:${mode}:${date}`)
   if (session || mode !== 'daily') return session
@@ -70,6 +74,10 @@ export function loadConnectionsSession(date: string, mode: ConnectionsSession['m
 
 export function saveConnectionsSession(session: ConnectionsSession): void {
   write(`${connectionsSessionKey}:${session.mode}:${session.date}`, session)
+}
+
+export function clearConnectionsSession(date: string, mode: ConnectionsSession['mode'] = 'daily'): void {
+  try { window.localStorage.removeItem(`${connectionsSessionKey}:${mode}:${date}`) } catch { /* best effort */ }
 }
 
 export function loadTheme(): 'system' | 'light' | 'dark' {
