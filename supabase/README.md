@@ -138,6 +138,19 @@ The first panel provides read-only Wordo schedule visibility plus Connections dr
 
 Admin mutations and their audit records are committed in one database transaction. Edge Functions apply atomic per-IP request limits to starts, guesses, Versus creation/joining, and admin requests; oversized JSON bodies are rejected before parsing.
 
+Run the authenticated release smoke checks with confirmed test accounts. The script never prints credentials and does not create users or change passwords:
+
+```powershell
+$env:VITE_SUPABASE_URL="https://imndxrsbavywbsnyreyz.supabase.co"
+$env:VITE_SUPABASE_ANON_KEY="public-anon-key"
+$env:DAILO_TEST_EMAIL_A="confirmed-test-account@example.com"
+$env:DAILO_TEST_PASSWORD_A="test-password"
+# Optional second confirmed account for isolation checks:
+$env:DAILO_TEST_EMAIL_B="second-test-account@example.com"
+$env:DAILO_TEST_PASSWORD_B="second-test-password"
+npm run test:release-auth
+```
+
 ## Content Import
 
 Validate a JSON file before import:

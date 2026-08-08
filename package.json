@@ -9,6 +9,7 @@
     "test": "vitest run && node --test scripts/lib/*.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:release-auth": "node scripts/release-auth-smoke.mjs",
     "validate:content": "node scripts/validate-wordle-content.mjs",
     "validate:connections": "node scripts/validate-connections-content.mjs",
     "schedule:connections": "node scripts/schedule-connections.mjs",
