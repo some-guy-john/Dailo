@@ -309,6 +309,10 @@ button { font: inherit; color: inherit; }
 .connections-mistakes i[data-used='true'] { border-color: var(--present); background: var(--present); }
 .connections-groups { display: grid; gap: 8px; margin-bottom: 12px; }
 .connections-group { display: grid; gap: 2px; padding: 13px 16px; border-radius: 7px; background: color-mix(in srgb, var(--correct) 24%, var(--surface)); text-align: center; }
+.connections-group[data-difficulty='1'] { background: color-mix(in srgb, #f2d35c 58%, var(--surface)); }
+.connections-group[data-difficulty='2'] { background: color-mix(in srgb, #75bd69 48%, var(--surface)); }
+.connections-group[data-difficulty='3'] { background: color-mix(in srgb, #6ca7dc 48%, var(--surface)); }
+.connections-group[data-difficulty='4'] { background: color-mix(in srgb, #a985c7 48%, var(--surface)); }
 .connections-group strong { font-size: 13px; }
 .connections-group span { color: var(--text-soft); font-size: 11px; }
 .connections-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 20px; }
@@ -322,6 +326,13 @@ button { font: inherit; color: inherit; }
 .connections-feedback { min-height: 24px; margin: 14px 0 0; color: var(--text-soft); font-size: 13px; text-align: center; }
 .connections-finished { display: grid; gap: 5px; margin-top: 30px; padding: 24px; border: 1px solid var(--line); border-radius: 8px; text-align: center; }
 .connections-finished span { color: var(--text-soft); font-size: 13px; }
+.connections-finished .primary-button { justify-self: center; margin-top: 12px; }
+.connections-distribution { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 0 0 20px; }
+.connections-distribution div { display: grid; gap: 3px; padding: 10px 4px; border: 1px solid var(--line); border-radius: 7px; text-align: center; }
+.connections-distribution b { font-size: 18px; }
+.connections-distribution span { color: var(--text-soft); font-size: 9px; }
+.device-stats { display: grid; gap: 3px; margin: 8px 0 18px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; }
+.device-stats span { color: var(--text-soft); font-size: 11px; }
 .mode-tabs button[aria-pressed='true'] { background: var(--key-bg); color: var(--text); }
 
 .board-area { flex: none; display: flex; align-items: center; justify-content: center; padding: 12px 16px 24px; }

@@ -68,7 +68,7 @@ Submit a guess:
 }
 ```
 
-The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Authenticated Archive sessions can be resumed across devices. Daily, Unlimited, and Connections remain anonymous.
+The function returns tile results and public state. It returns the answer only after a game is won or lost. Archive listing, archive sessions, and archive guesses require a confirmed Supabase email/password user. Authenticated Archive sessions can be resumed across devices. Daily, Unlimited, and Connections remain anonymously playable.
 
 Connections start:
 
@@ -94,6 +94,8 @@ Connections submission:
 Connections returns the 16 playable words and solved groups, but does not return unsolved group labels or memberships until the puzzle is complete. A player has four mistakes.
 
 Each Connections group has one unique difficulty from 1 through 4. The database enforces a complete partition of 16 unique normalized words, protects published puzzle content from ordinary mutation, and permits the submission RPC only through the service-role Edge Function.
+
+When a confirmed user starts or resumes Connections, the server binds a session only after the player proves possession of its token or starts while authenticated. Verified completed Daily sessions provide cross-device Connections statistics through `connections-stats`. Browser-only historical summaries are never uploaded or treated as authoritative.
 
 ## Content Import
 

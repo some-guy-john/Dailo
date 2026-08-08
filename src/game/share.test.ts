@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createShareText } from './share'
+import { createConnectionsShareText, createShareText } from './share'
 import type { GameSession } from './types'
 
 describe('share text', () => {
@@ -41,5 +41,25 @@ describe('share text', () => {
     const text = createShareText(session, true)
     expect(text).toContain('Dailo Wordo Unlimited 1/6')
     expect(text).toContain('⬜🟦⬜⬜🟧')
+  })
+})
+
+describe('Connections share text', () => {
+  it('shares colored attempts without words or group labels', () => {
+    const text = createConnectionsShareText({
+      puzzleId: 'connections-1', date: '2026-08-08', words: ['APPLE', 'PEAR', 'HARP', 'LION'],
+      solvedGroups: [
+        { key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] },
+        { key: 'music', label: 'Instruments', difficulty: 2, words: ['HARP', 'CELLO', 'VIOLIN', 'GUITAR'] },
+        { key: 'shape', label: 'Shapes', difficulty: 3, words: ['OVAL', 'SQUARE', 'CIRCLE', 'TRIANGLE'] },
+        { key: 'cats', label: 'Big cats', difficulty: 4, words: ['LION', 'PUMA', 'TIGER', 'LEOPARD'] },
+      ],
+      attempts: [{ words: ['APPLE', 'HARP', 'OVAL', 'LION'], result: 'incorrect' }],
+      mistakeCount: 1, maxMistakes: 4, status: 'lost', startedAt: '2026-08-08T00:00:00Z',
+    })
+    expect(text).toContain('Dailo Connections 2026-08-08 X/4')
+    expect(text).toContain('🟨🟩🟦🟪')
+    expect(text).not.toContain('APPLE')
+    expect(text).not.toContain('Fruit')
   })
 })

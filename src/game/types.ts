@@ -49,12 +49,20 @@ export type Stats = {
   unlimitedResults: UnlimitedResult[]
   archiveResults: ArchiveResult[]
   recentUnlimitedPuzzleIds: string[]
+  connectionsDailyResults: Record<string, ConnectionsDailyResult>
 }
 
 export type ConnectionsGroup = {
   key: string
   label: string
+  difficulty: 1 | 2 | 3 | 4
   words: string[]
+}
+
+export type ConnectionsDailyResult = {
+  date: string
+  won: boolean
+  mistakes: number
 }
 
 export type ConnectionsAttempt = {

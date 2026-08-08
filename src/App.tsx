@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatCountdown, formatLondonDate, getLondonDate, getMillisecondsUntilLondonMidnight } from './game/date'
-import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './game/stats'
+import { calculateCurrentStreak, calculateMaximumStreak, recordConnectionsSession, recordSession } from './game/stats'
 import {
   DEFAULT_PREFERENCES,
   loadPreferences,
@@ -12,10 +12,10 @@ import {
   saveStats,
   saveTheme,
 } from './game/storage'
-import { createEmptySession, GameServiceError, getArchiveStats, listArchivePuzzles, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
-import type { ArchiveStats } from './game/service'
+import { createEmptySession, GameServiceError, getArchiveStats, getConnectionsStats, listArchivePuzzles, startConnections, startGame, submitConnections, submitGuess as submitGuessToService } from './game/service'
+import type { ArchiveStats, ConnectionsStats } from './game/service'
 import { mergeKeyboardState, MAX_GUESSES, WORD_LENGTH } from './game/rules'
-import { createShareText } from './game/share'
+import { createConnectionsShareText, createShareText } from './game/share'
 import type { ConnectionsSession, GameMode, GameSession, Stats, TileState } from './game/types'
 import { getAuthRedirectUrl, supabase } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
@@ -55,6 +55,8 @@ function App() {
   const [connectionsNotice, setConnectionsNotice] = useState('')
   const [connectionsLoading, setConnectionsLoading] = useState(false)
   const [connectionsSubmitting, setConnectionsSubmitting] = useState(false)
+  const [connectionsCloudStats, setConnectionsCloudStats] = useState<ConnectionsStats>({ dailyResults: {} })
+  const [connectionsCloudStatsLoaded, setConnectionsCloudStatsLoaded] = useState(false)
   const [keyboard, setKeyboard] = useState<Record<string, TileState>>(EMPTY_KEYBOARD)
   const [currentGuess, setCurrentGuess] = useState('')
   const [pendingGuess, setPendingGuess] = useState('')
@@ -89,6 +91,16 @@ function App() {
   const archiveWinPercentage = archivePlayed === 0 ? 0 : Math.round((archiveWins / archivePlayed) * 100)
   const displayedArchivePlayed = archiveStatsLoaded ? archiveStats.played : archivePlayed
   const displayedArchiveWins = archiveStatsLoaded ? archiveStats.wins : archiveWins
+  const connectionsDeviceResults = stats.connectionsDailyResults
+  const connectionsResults = user && connectionsCloudStatsLoaded ? connectionsCloudStats.dailyResults : connectionsDeviceResults
+  const connectionsPlayed = Object.keys(connectionsResults).length
+  const connectionsWins = Object.values(connectionsResults).filter((result) => result.won).length
+  const connectionsWinPercentage = connectionsPlayed === 0 ? 0 : Math.round((connectionsWins / connectionsPlayed) * 100)
+  const connectionsCurrentStreak = calculateCurrentStreak(connectionsResults, today)
+  const connectionsMaximumStreak = calculateMaximumStreak(connectionsResults)
+  const connectionsMistakeDistribution = Array.from({ length: 5 }, (_, mistakes) => (
+    Object.values(connectionsResults).filter((result) => result.won && result.mistakes === mistakes).length
+  ))
 
   useEffect(() => {
     if (!session.sessionToken) return
@@ -144,6 +156,7 @@ function App() {
   useEffect(() => {
     if (!user) {
       setArchiveStatsLoaded(false)
+      setConnectionsCloudStatsLoaded(false)
       return
     }
     let cancelled = false
@@ -156,6 +169,13 @@ function App() {
       .catch(() => {
         if (!cancelled) setArchiveStatsLoaded(false)
       })
+    void getConnectionsStats().then((nextStats) => {
+      if (cancelled) return
+      setConnectionsCloudStats(nextStats)
+      setConnectionsCloudStatsLoaded(true)
+    }).catch(() => {
+      if (!cancelled) setConnectionsCloudStatsLoaded(false)
+    })
     return () => { cancelled = true }
   }, [user?.id])
 
@@ -247,6 +267,7 @@ function App() {
         if (cancelled) return
         setConnectionsSession(nextSession)
         saveConnectionsSession(nextSession)
+        if (nextSession.status !== 'active') setStats((currentStats) => recordConnectionsSession(currentStats, nextSession))
         setConnectionsLoading(false)
       })
       .catch((error: unknown) => {
@@ -255,7 +276,7 @@ function App() {
         setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections could not be loaded.')
       })
     return () => { cancelled = true }
-  }, [screen, today])
+  }, [screen, today, user?.id])
 
   useEffect(() => {
     if (!dialog) return
@@ -417,6 +438,17 @@ function App() {
     setReloadKey((value) => value + 1)
   }
 
+  async function shareConnectionsResult() {
+    if (!connectionsSession || connectionsSession.status === 'active') return
+    try {
+      await navigator.clipboard.writeText(createConnectionsShareText(connectionsSession))
+      setShareLabel('Copied')
+    } catch {
+      setShareLabel('Copy unavailable')
+    }
+    window.setTimeout(() => setShareLabel('Share'), 1600)
+  }
+
   function openArchive() {
     setDialog(null)
     setScreen('archive')
@@ -447,6 +479,14 @@ function App() {
       setConnectionsNotice(response.result.result === 'correct'
         ? `Group found${response.result.group ? `: ${response.result.group.label}` : ''}`
         : response.result.result === 'one-away' ? 'One away' : 'Not quite')
+      if (response.session.status !== 'active') {
+        setStats((currentStats) => recordConnectionsSession(currentStats, response.session))
+        if (user) void getConnectionsStats().then((nextStats) => {
+          setConnectionsCloudStats(nextStats)
+          setConnectionsCloudStatsLoaded(true)
+        }).catch(() => {})
+        window.setTimeout(() => setDialog('stats'), 900)
+      }
     } catch (error: unknown) {
       setConnectionsNotice(error instanceof GameServiceError ? error.message : 'The selection could not be checked.')
     } finally {
@@ -667,7 +707,7 @@ function App() {
                 </div>
                 <div className="connections-groups">
                   {connectionsSession.solvedGroups.map((group) => (
-                    <div className="connections-group" key={group.key}>
+                    <div className="connections-group" data-difficulty={group.difficulty} key={group.key}>
                       <strong>{group.label}</strong>
                       <span>{group.words.join(' · ')}</span>
                     </div>
@@ -694,6 +734,7 @@ function App() {
                   <div className="connections-finished" role="status">
                     <strong>{connectionsSession.status === 'won' ? 'All groups found.' : 'The groups were hiding well.'}</strong>
                     <span>{connectionsSession.mistakeCount} of {connectionsSession.maxMistakes} mistakes used.</span>
+                    <button className="primary-button" type="button" onClick={() => setDialog('stats')}>View results</button>
                   </div>
                 )}
               </>
@@ -927,10 +968,30 @@ function App() {
             <button className="icon-button modal-close" type="button" aria-label="Close statistics" onClick={() => setDialog(null)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
-            <h2 id="stats-title">{mode === 'archive' ? 'Archive result' : 'Statistics'}</h2>
-            {verdict && <p className="verdict">{verdict}</p>}
+            <h2 id="stats-title">{screen === 'connections' ? 'Connections statistics' : mode === 'archive' ? 'Archive result' : 'Statistics'}</h2>
+            {screen !== 'connections' && verdict && <p className="verdict">{verdict}</p>}
 
-            <div className="stat-row">
+            {screen === 'connections' ? (
+              <>
+                <div className="stat-row">
+                  <div className="stat"><b>{connectionsPlayed}</b><span>Played</span></div>
+                  <div className="stat"><b>{connectionsWinPercentage}</b><span>Win %</span></div>
+                  <div className="stat"><b>{connectionsCurrentStreak}</b><span>Current streak</span></div>
+                  <div className="stat"><b>{connectionsMaximumStreak}</b><span>Max streak</span></div>
+                </div>
+                <h2>Mistakes in wins</h2>
+                <div className="connections-distribution">
+                  {connectionsMistakeDistribution.map((count, mistakes) => <div key={mistakes}><b>{count}</b><span>{mistakes} mistake{mistakes === 1 ? '' : 's'}</span></div>)}
+                </div>
+                {user && <div className="device-stats"><b>This device</b><span>{Object.keys(connectionsDeviceResults).length} locally saved result{Object.keys(connectionsDeviceResults).length === 1 ? '' : 's'}. Cloud statistics above include verified signed-in games only.</span></div>}
+                <div className="share-split">
+                  <div className="next-in"><span>Next Connections</span><b>{dailyCountdown}</b></div>
+                  <div className="share-rule" />
+                  <button className="primary-button" type="button" onClick={() => void shareConnectionsResult()} disabled={!connectionsSession || connectionsSession.status === 'active'}>{shareLabel}</button>
+                </div>
+                <p className="fine" style={{ marginTop: 14 }}>{user ? 'Verified signed-in results sync across devices. Older device results remain local.' : 'Saved in this browser only. Sign in to sync future verified results.'}</p>
+              </>
+            ) : <><div className="stat-row">
               <div className="stat"><b>{mode === 'archive' ? displayedArchivePlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>
               <div className="stat"><b>{mode === 'archive' ? (displayedArchivePlayed === 0 ? 0 : Math.round((displayedArchiveWins / displayedArchivePlayed) * 100)) : winPercentage}</b><span>Win %</span></div>
               <div className="stat"><b>{mode === 'archive' ? '—' : currentStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Current streak'}</span></div>
@@ -976,7 +1037,7 @@ function App() {
                 </button>
               )}
             </div>
-            <p className="fine" style={{ marginTop: 14 }}>Saved in this browser only. Clearing your data clears these.</p>
+            <p className="fine" style={{ marginTop: 14 }}>Saved in this browser only. Clearing your data clears these.</p></>}
           </div>
         </div>
       )}

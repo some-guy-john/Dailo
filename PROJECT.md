@@ -14,7 +14,7 @@ Release 1 is intentionally limited to polished daily puzzle games with:
 - Server-side protection of puzzle answers
 - Four-group Connections puzzles with protected group data
 
-Full account-backed history, multiplayer, crosswords, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1. Archive access uses a confirmed email/password account, while Daily, Unlimited, and Connections remain anonymous.
+Full account-backed Wordo history, multiplayer, crosswords, public profiles, leaderboards, chat, advertising, and a graphical admin panel are not part of Release 1. Archive access uses a confirmed email/password account. Daily, Unlimited, and Connections remain playable anonymously; signed-in Connections players sync server-verified current and future Daily results.
 
 ---
 
@@ -37,6 +37,7 @@ The deployed Release 1 experience includes:
 - Server-synced Archive play statistics
 - Protected Supabase sessions and server-authoritative guesses
 - Protected Connections sessions and server-authoritative group submissions
+- Connections sharing, local statistics, and signed-in verified Daily result sync
 - London-time daily rollover handling
 - Browser-local stats, streaks, preferences, and refresh recovery
 - Responsive mobile and desktop layout with reduced-motion and high-contrast options

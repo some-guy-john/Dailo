@@ -27,6 +27,7 @@ type AttemptRow = {
 type ConnectionsGroup = {
   key: string
   label: string
+  difficulty: 1 | 2 | 3 | 4
   words: string[]
 }
 
@@ -34,6 +35,7 @@ type ConnectionsSessionRow = {
   id: string
   token_hash: string
   browser_id_hash: string | null
+  auth_user_id: string | null
   puzzle_id: string
   london_date: string
   status: 'active' | 'won' | 'lost' | 'expired'
@@ -77,6 +79,15 @@ async function requireConfirmedUser(request: Request): Promise<{ id: string; ema
   const { data, error } = await admin.auth.getUser(match[1])
   if (error || !data.user) throw new RequestError('archive_auth_required', 'Sign in with a confirmed email to use Archive.', 401)
   if (!data.user.email_confirmed_at) throw new RequestError('archive_email_unconfirmed', 'Confirm your email before using Archive.', 403)
+  return { id: data.user.id, email: data.user.email }
+}
+
+async function optionalConfirmedUser(request: Request): Promise<{ id: string; email: string | undefined } | null> {
+  const authorization = request.headers.get('Authorization') ?? ''
+  const match = authorization.match(/^Bearer\s+(.+)$/i)
+  if (!match) return null
+  const { data, error } = await admin.auth.getUser(match[1])
+  if (error || !data.user || !data.user.email_confirmed_at) return null
   return { id: data.user.id, email: data.user.email }
 }
 
@@ -151,25 +162,51 @@ async function connectionsState(session: ConnectionsSessionRow) {
   }
 }
 
-async function startConnections(body: Record<string, unknown>) {
+const connectionsSessionColumns = 'id, token_hash, browser_id_hash, auth_user_id, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at'
+
+async function startConnections(body: Record<string, unknown>, request: Request) {
   const currentDate = londonDate()
+  const authUser = await optionalConfirmedUser(request)
   const providedToken = body.sessionToken
   if (typeof providedToken === 'string' && providedToken.length > 0) {
     const tokenHash = await hashToken(providedToken)
     const { data: session, error } = await admin
       .from('connections_game_sessions')
-      .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+      .select(connectionsSessionColumns)
       .eq('token_hash', tokenHash)
       .maybeSingle()
     if (error) throw new RequestError('temporary_server_failure', error.message, 503)
-    if (session) return { sessionToken: providedToken, connections: { state: await connectionsState(session as ConnectionsSessionRow) } }
+    if (session) {
+      if (session.auth_user_id && session.auth_user_id !== authUser?.id) throw new RequestError('invalid_session', 'This Connections session belongs to another account.', 401)
+      if (authUser && !session.auth_user_id) {
+        const { error: claimError } = await admin.from('connections_game_sessions').update({ auth_user_id: authUser.id }).eq('id', session.id).is('auth_user_id', null)
+        if (claimError) throw new RequestError('temporary_server_failure', claimError.message, 503)
+        session.auth_user_id = authUser.id
+      }
+      return { sessionToken: providedToken, connections: { state: await connectionsState(session as ConnectionsSessionRow) } }
+    }
   }
 
   const browserIdHash = await hashOptionalIdentifier(body.browserId)
+  if (authUser) {
+    const { data: existing, error } = await admin.from('connections_game_sessions').select(connectionsSessionColumns)
+      .eq('auth_user_id', authUser.id).eq('london_date', currentDate).maybeSingle()
+    if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+    if (existing) {
+      const replacementToken = createSessionToken()
+      const replacementHash = await hashToken(replacementToken)
+      const { error: tokenError } = await admin.from('connections_game_sessions')
+        .update({ token_hash: replacementHash, browser_id_hash: browserIdHash }).eq('id', existing.id)
+      if (tokenError) throw new RequestError('temporary_server_failure', tokenError.message, 503)
+      existing.token_hash = replacementHash
+      existing.browser_id_hash = browserIdHash
+      return { sessionToken: replacementToken, connections: { state: await connectionsState(existing as ConnectionsSessionRow) } }
+    }
+  }
   if (browserIdHash) {
     const { data: existing, error } = await admin
       .from('connections_game_sessions')
-      .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+      .select(connectionsSessionColumns)
       .eq('browser_id_hash', browserIdHash)
       .eq('london_date', currentDate)
       .maybeSingle()
@@ -193,17 +230,18 @@ async function startConnections(body: Record<string, unknown>) {
     .insert({
       token_hash: tokenHash,
       browser_id_hash: browserIdHash,
+      auth_user_id: authUser?.id ?? null,
       puzzle_id: puzzle.id,
       london_date: currentDate,
       expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 8).toISOString(),
     })
-    .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+    .select(connectionsSessionColumns)
     .single()
   if (error || !created) throw new RequestError('temporary_server_failure', error?.message ?? 'Could not create Connections game.', 503)
   return { sessionToken: token, connections: { state: await connectionsState(created as ConnectionsSessionRow) } }
 }
 
-async function submitConnections(body: Record<string, unknown>) {
+async function submitConnections(body: Record<string, unknown>, request: Request) {
   const token = requireString(body.sessionToken, 'session_token', 256)
   const selectedWords = body.words
   const idempotencyKey = requireString(body.idempotencyKey, 'idempotency_key', 128)
@@ -212,6 +250,10 @@ async function submitConnections(body: Record<string, unknown>) {
   }
 
   const session = await findConnectionsSession(token)
+  if (session.auth_user_id) {
+    const authUser = await optionalConfirmedUser(request)
+    if (authUser?.id !== session.auth_user_id) throw new RequestError('invalid_session', 'This Connections session belongs to another account.', 401)
+  }
   const { data, error } = await admin.rpc('connections_submit_guess', {
     p_token_hash: await hashToken(token),
     p_selected_words: selectedWords,
@@ -242,12 +284,26 @@ async function submitConnections(body: Record<string, unknown>) {
 async function findConnectionsSession(token: string): Promise<ConnectionsSessionRow> {
   const { data, error } = await admin
     .from('connections_game_sessions')
-    .select('id, token_hash, browser_id_hash, puzzle_id, london_date, status, mistake_count, solved_groups, started_at, completed_at, expires_at')
+    .select(connectionsSessionColumns)
     .eq('token_hash', await hashToken(token))
     .maybeSingle()
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
   if (!data) throw new RequestError('invalid_session', 'This Connections session is not valid.', 401)
   return data as ConnectionsSessionRow
+}
+
+async function connectionsStats(request: Request) {
+  const authUser = await requireConfirmedUser(request)
+  const { data, error } = await admin.from('connections_game_sessions')
+    .select('london_date, status, mistake_count').eq('auth_user_id', authUser.id)
+    .in('status', ['won', 'lost']).order('london_date', { ascending: true }).limit(1000)
+  if (error) throw new RequestError('temporary_server_failure', error.message, 503)
+  const dailyResults = Object.fromEntries((data ?? []).map((session) => [session.london_date, {
+    date: session.london_date,
+    won: session.status === 'won',
+    mistakes: session.mistake_count,
+  }]))
+  return { connections: { stats: { dailyResults } } }
 }
 
 async function startSession(body: Record<string, unknown>, request: Request) {
@@ -525,8 +581,9 @@ async function handle(request: Request): Promise<Response> {
     const body = await readBody(request)
     const action = body.action
     if (action === 'start') return json(await startSession(body, request))
-    if (action === 'connections-start') return json(await startConnections(body))
-    if (action === 'connections-submit') return json(await submitConnections(body))
+    if (action === 'connections-start') return json(await startConnections(body, request))
+    if (action === 'connections-submit') return json(await submitConnections(body, request))
+    if (action === 'connections-stats') return json(await connectionsStats(request))
     if (action === 'archive-list') return json(await listArchive(body, request))
     if (action === 'archive-stats') return json(await archiveStats(request))
     if (action === 'guess') return json(await submitGuess(body, request))

@@ -1,14 +1,28 @@
 import { shiftDate } from './date'
-import type { ArchiveResult, DailyResult, GameSession, Stats, UnlimitedResult } from './types'
+import type { ArchiveResult, ConnectionsDailyResult, ConnectionsSession, DailyResult, GameSession, Stats, UnlimitedResult } from './types'
 
 export const EMPTY_STATS: Stats = {
   dailyResults: {},
   unlimitedResults: [],
   archiveResults: [],
   recentUnlimitedPuzzleIds: [],
+  connectionsDailyResults: {},
 }
 
-export function calculateCurrentStreak(results: Record<string, DailyResult>, today: string): number {
+export function recordConnectionsSession(stats: Stats, session: ConnectionsSession): Stats {
+  if (session.status === 'active' || stats.connectionsDailyResults[session.date]) return stats
+  const result: ConnectionsDailyResult = {
+    date: session.date,
+    won: session.status === 'won',
+    mistakes: session.mistakeCount,
+  }
+  return {
+    ...stats,
+    connectionsDailyResults: { ...stats.connectionsDailyResults, [session.date]: result },
+  }
+}
+
+export function calculateCurrentStreak(results: Record<string, Pick<DailyResult, 'date' | 'won'>>, today: string): number {
   const todayResult = results[today]
   if (todayResult && !todayResult.won) return 0
 
@@ -21,7 +35,7 @@ export function calculateCurrentStreak(results: Record<string, DailyResult>, tod
   return streak
 }
 
-export function calculateMaximumStreak(results: Record<string, DailyResult>): number {
+export function calculateMaximumStreak(results: Record<string, Pick<DailyResult, 'date' | 'won'>>): number {
   const dates = Object.keys(results).sort()
   let best = 0
   let current = 0

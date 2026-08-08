@@ -231,13 +231,13 @@ test.describe('protected Wordo play', () => {
         body: JSON.stringify({
           sessionToken: 'connections-test-token',
           connections: {
-            result: { result: 'correct', group: { key: 'fruit', label: 'Fruit', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } },
+            result: { result: 'correct', group: { key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } },
             state: {
               puzzleId: 'connections-test-puzzle',
               date: '2026-08-08',
               words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO'],
-              solvedGroups: [{ key: 'fruit', label: 'Fruit', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] }],
-              attempts: [{ words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'], result: 'correct', group: { key: 'fruit', label: 'Fruit', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } }],
+              solvedGroups: [{ key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] }],
+              attempts: [{ words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'], result: 'correct', group: { key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] } }],
               mistakeCount: 0,
               maxMistakes: 4,
               status: 'active',
@@ -259,6 +259,49 @@ test.describe('protected Wordo play', () => {
     await page.getByRole('button', { name: 'Submit' }).click()
     await expect(connections.getByText('Fruit', { exact: true })).toBeVisible()
     await expect(connections.locator('.connections-word')).toHaveCount(4)
+  })
+
+  test('restores completed Connections statistics and copies a spoiler-free result', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (text: string) => { (window as unknown as { copiedText: string }).copiedText = text } },
+      })
+    })
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action !== 'connections-start') return route.continue()
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionToken: 'completed-connections-token',
+          connections: { state: {
+            puzzleId: 'completed-connections-puzzle', date: '2026-08-08',
+            words: ['APPLE', 'MANGO', 'PEAR', 'PLUM', 'HARP', 'GUITAR', 'VIOLIN', 'CELLO', 'CIRCLE', 'OVAL', 'SQUARE', 'TRIANGLE', 'LION', 'PUMA', 'TIGER', 'LEOPARD'],
+            solvedGroups: [
+              { key: 'fruit', label: 'Fruit', difficulty: 1, words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'] },
+              { key: 'strings', label: 'String instruments', difficulty: 2, words: ['HARP', 'GUITAR', 'VIOLIN', 'CELLO'] },
+              { key: 'shapes', label: 'Shapes', difficulty: 3, words: ['CIRCLE', 'OVAL', 'SQUARE', 'TRIANGLE'] },
+              { key: 'cats', label: 'Big cats', difficulty: 4, words: ['LION', 'PUMA', 'TIGER', 'LEOPARD'] },
+            ],
+            attempts: [{ words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'], result: 'correct' }],
+            mistakeCount: 0, maxMistakes: 4, status: 'won',
+          } },
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Connections/ }).click()
+    await page.getByRole('button', { name: 'View results' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Connections statistics' })
+    await expect(dialog.getByText('Played').locator('..').getByText('1')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Share' }).click()
+    const copiedText = await page.evaluate(() => (window as unknown as { copiedText: string }).copiedText)
+    expect(copiedText).toContain('Dailo Connections 2026-08-08 4/4')
+    expect(copiedText).not.toContain('APPLE')
+    expect(copiedText).not.toContain('Fruit')
   })
 
   test('opens the protected archive browser and starts a past edition', async ({ page }) => {

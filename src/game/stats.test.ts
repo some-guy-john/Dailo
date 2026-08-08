@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateCurrentStreak, calculateMaximumStreak, recordSession } from './stats'
+import { calculateCurrentStreak, calculateMaximumStreak, recordConnectionsSession, recordSession } from './stats'
 import type { Stats } from './types'
 
 describe('daily streaks', () => {
@@ -48,6 +48,7 @@ describe('archive results', () => {
       unlimitedResults: [],
       archiveResults: [],
       recentUnlimitedPuzzleIds: [],
+      connectionsDailyResults: {},
     }
     const next = recordSession(stats, {
       mode: 'archive',
@@ -62,5 +63,20 @@ describe('archive results', () => {
     expect(next.archiveResults).toEqual([{ date: '2026-08-06', puzzleId: 'archive-puzzle', won: true, guesses: 0 }])
     expect(next.dailyResults).toEqual({})
     expect(next.unlimitedResults).toEqual([])
+  })
+})
+
+describe('Connections daily results', () => {
+  it('records one dated result idempotently', () => {
+    const stats: Stats = {
+      dailyResults: {}, unlimitedResults: [], archiveResults: [], recentUnlimitedPuzzleIds: [], connectionsDailyResults: {},
+    }
+    const session = {
+      puzzleId: 'connections-1', date: '2026-08-08', words: [], solvedGroups: [], attempts: [],
+      mistakeCount: 2, maxMistakes: 4, status: 'won' as const, startedAt: '2026-08-08T00:00:00Z',
+    }
+    const recorded = recordConnectionsSession(stats, session)
+    expect(recorded.connectionsDailyResults['2026-08-08']).toEqual({ date: '2026-08-08', won: true, mistakes: 2 })
+    expect(recordConnectionsSession(recorded, { ...session, mistakeCount: 3 })).toBe(recorded)
   })
 })

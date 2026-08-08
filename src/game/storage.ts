@@ -40,6 +40,7 @@ export function loadStats(): Stats {
     unlimitedResults: stored?.unlimitedResults ?? [],
     archiveResults: stored?.archiveResults ?? [],
     recentUnlimitedPuzzleIds: stored?.recentUnlimitedPuzzleIds ?? [],
+    connectionsDailyResults: stored?.connectionsDailyResults ?? {},
   }
 }
 

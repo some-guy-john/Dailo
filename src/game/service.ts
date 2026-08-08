@@ -27,6 +27,7 @@ type BackendResponse = {
   connections?: {
     state?: ConnectionsBackendState
     result?: ConnectionsBackendResult
+    stats?: ConnectionsStats
   }
   error?: { code: string; message: string }
 }
@@ -58,6 +59,10 @@ export type ArchiveStats = {
   played: number
   wins: number
   distribution: number[]
+}
+
+export type ConnectionsStats = {
+  dailyResults: Record<string, { date: string; won: boolean; mistakes: number }>
 }
 
 export const isProtectedBackendConfigured = Boolean(
@@ -176,6 +181,12 @@ export async function startConnections(date: string, forceNew = false): Promise<
     throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete Connections puzzle.')
   }
   return fromConnectionsState(response.connections.state, response.sessionToken, saved ?? undefined)
+}
+
+export async function getConnectionsStats(): Promise<ConnectionsStats> {
+  if (!isProtectedBackendConfigured) throw new GameServiceError('configuration_missing', 'Connect Supabase before loading Connections statistics.')
+  const response = await callBackend({ action: 'connections-stats' })
+  return response.connections?.stats ?? { dailyResults: {} }
 }
 
 export async function submitConnections(session: ConnectionsSession, words: string[]): Promise<{ session: ConnectionsSession; result: ConnectionsBackendResult }> {
