@@ -36,3 +36,12 @@ enabled = false
 
 [analytics]
 enabled = false
+
+[functions.wordle]
+verify_jwt = false
+
+[functions.wordo-versus]
+verify_jwt = false
+
+[functions.dailo-admin]
+verify_jwt = false
