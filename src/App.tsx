@@ -19,19 +19,22 @@ import { createConnectionsShareText, createShareText } from './game/share'
 import type { ConnectionsSession, GameMode, GameSession, Stats, TileState } from './game/types'
 import { getAuthRedirectUrl, supabase } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
+import { parseVersusRoute, versusHash, type VersusRoute } from './versus/routing'
 
 const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
 const PRAISE = ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew']
 
-type Screen = 'play' | 'games' | 'archive' | 'connections'
+type Screen = 'play' | 'games' | 'archive' | 'connections' | 'versus'
 type Dialog = 'stats' | 'help' | 'settings' | 'account' | null
 type AuthMode = 'signin' | 'signup' | 'reset' | 'update'
 
 function App() {
+  const initialVersusRoute = typeof window === 'undefined' ? null : parseVersusRoute(window.location.hash)
   const [today, setToday] = useState(getLondonDate)
   const [mode, setMode] = useState<GameMode>('daily')
-  const [screen, setScreen] = useState<Screen>('play')
+  const [screen, setScreen] = useState<Screen>(initialVersusRoute ? 'versus' : 'play')
+  const [versusRoute, setVersusRoute] = useState<VersusRoute | null>(initialVersusRoute)
   const [archiveDate, setArchiveDate] = useState<string | null>(null)
   const [archivePuzzles, setArchivePuzzles] = useState<Awaited<ReturnType<typeof listArchivePuzzles>>>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
@@ -126,6 +129,16 @@ function App() {
   }, [theme])
 
   useEffect(() => { savePreferences(preferences) }, [preferences])
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = parseVersusRoute(window.location.hash)
+      setVersusRoute(route)
+      if (route) setScreen('versus')
+    }
+    window.addEventListener('hashchange', syncRoute)
+    return () => window.removeEventListener('hashchange', syncRoute)
+  }, [])
 
   useEffect(() => {
     const updateCountdown = () => setDailyCountdown(formatCountdown(getMillisecondsUntilLondonMidnight()))
@@ -490,6 +503,13 @@ function App() {
     setScreen('connections')
   }
 
+  function openVersus() {
+    const route: VersusRoute = { kind: 'create' }
+    window.location.hash = versusHash(route)
+    setVersusRoute(route)
+    setScreen('versus')
+  }
+
   function openConnectionsArchive() {
     setDialog(null)
     setConnectionsSession(null)
@@ -647,7 +667,7 @@ function App() {
       <header className="bar" data-screen={screen} data-size={screen === 'games' ? 'small' : 'normal'}>
         <div className="bar-left">
           <span className="brand-stamp" aria-label="Dailo">D</span>
-          <button className="icon-button" type="button" aria-label="All games" onClick={() => { setDialog(null); setScreen('games') }}>
+          <button className="icon-button" type="button" aria-label="All games" onClick={() => { setDialog(null); window.location.hash = ''; setVersusRoute(null); setScreen('games') }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <rect x="3.5" y="3.5" width="7" height="7" /><rect x="13.5" y="3.5" width="7" height="7" />
               <rect x="3.5" y="13.5" width="7" height="7" /><rect x="13.5" y="13.5" width="7" height="7" />
@@ -661,7 +681,7 @@ function App() {
             </svg>
           </button>
         </div>
-        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : screen === 'connections' ? 'Connections' : 'Wordo'}</h1>
+        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : screen === 'connections' ? 'Connections' : screen === 'versus' ? 'Wordo Versus' : 'Wordo'}</h1>
         <div className="bar-right">
           <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -733,11 +753,32 @@ function App() {
                 </span>
                 <span className="game-go">Play</span>
               </button>
+
+              <button className="game-row" type="button" onClick={openVersus}>
+                <span className="game-thumb versus-thumb" aria-hidden="true"><i data-state="correct" /><i /><i data-state="present" /><i /></span>
+                <span>
+                  <b>Wordo Versus</b>
+                  <span className="game-note">Challenge someone with a private link</span>
+                </span>
+                <span className="game-go">Create</span>
+              </button>
             </div>
 
             <p className="hub-foot">
               Current streak <b>{currentStreak}</b> · Next puzzle in <b>{dailyCountdown}</b>
             </p>
+          </div>
+        </section>
+      ) : screen === 'versus' ? (
+        <section className="screen versus-screen" aria-label="Wordo Versus">
+          <div className="versus-intro">
+            <span>Private match</span>
+            <h2>{versusRoute?.kind === 'invite' ? 'You’ve been challenged' : versusRoute?.kind === 'match' ? 'Return to your match' : 'Wordo, head to head'}</h2>
+            <p>{versusRoute?.kind === 'invite' ? 'Choose a display name to claim the open seat.' : versusRoute?.kind === 'match' ? 'This browser will restore its protected participant session.' : 'Create an untimed match, share one private link, and win by solving in fewer guesses.'}</p>
+            <div className="versus-rules">
+              <b>Two players</b><b>Six guesses</b><b>24 hours</b>
+            </div>
+            <p className="fine">The match service is being connected in the next feature slice. Daily and Unlimited statistics stay separate.</p>
           </div>
         </section>
       ) : screen === 'connections' ? (

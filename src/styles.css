@@ -299,6 +299,13 @@ button { font: inherit; color: inherit; }
 }
 
 .connections-game { width: min(100%, 620px); margin: 0 auto; padding: 30px 20px 48px; }
+.versus-screen { display: grid; place-items: center; padding: 32px 18px; }
+.versus-intro { width: min(100%, 560px); padding: 34px; border: 1px solid var(--line); border-radius: 18px 18px 6px 18px; background: var(--surface); box-shadow: 0 12px 40px rgba(40, 38, 30, 0.08); text-align: center; }
+.versus-intro > span { color: var(--present); font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.versus-intro h2 { margin: 8px 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(2rem, 8vw, 3rem); letter-spacing: -0.05em; }
+.versus-intro > p { color: var(--text-soft); line-height: 1.5; }
+.versus-rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 24px 0; }
+.versus-rules b { padding: 12px 6px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
 .connections-heading { text-align: center; }
 .connections-heading > span { color: var(--present); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .connections-heading h2 { margin: 4px 0 2px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(2rem, 8vw, 2.8rem); letter-spacing: -0.05em; }

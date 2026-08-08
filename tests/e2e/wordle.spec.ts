@@ -199,6 +199,28 @@ test.describe('protected Wordo play', () => {
     await expect(page.getByRole('heading', { name: 'Dailo' })).toBeVisible()
     await expect(page.getByText('Wordo Unlimited')).toBeVisible()
     await expect(page.getByText('Connections')).toBeVisible()
+    await expect(page.getByText('Wordo Versus')).toBeVisible()
+  })
+
+  test('opens Wordo Versus from the hub with a durable hash route', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Wordo Versus/ }).click()
+    await expect(page).toHaveURL(/#\/wordo\/versus$/)
+    await expect(page.getByRole('region', { name: 'Wordo Versus' })).toContainText('Wordo, head to head')
+    await page.reload()
+    await expect(page.getByRole('region', { name: 'Wordo Versus' })).toBeVisible()
+  })
+
+  test('opens a direct Versus invite without starting Daily Wordo', async ({ page }) => {
+    let dailyStarts = 0
+    await page.route('**/functions/v1/wordle', async (route) => {
+      dailyStarts += 1
+      await route.abort()
+    })
+    await page.goto('/#/wordo/versus/invite/abcdefghijklmnop')
+    await expect(page.getByRole('region', { name: 'Wordo Versus' })).toContainText('You’ve been challenged')
+    expect(dailyStarts).toBe(0)
   })
 
   test('opens and plays the protected Connections board', async ({ page }) => {
