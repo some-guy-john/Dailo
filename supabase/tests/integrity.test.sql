@@ -57,7 +57,7 @@ select ok(
 );
 
 select throws_ok(
-  $$ select public.wordle_submit_guess('missing-token', 'CRANE', 1, 'missing-key') $$,
+  $$ select public.wordle_submit_guess('missing-token'::text, 'CRANE'::text, 1::smallint, 'missing-key'::text) $$,
   'P0001',
   'invalid_session',
   'Wordo rejects unknown session tokens'
@@ -121,7 +121,7 @@ select ok(
   exists (
     select 1 from pg_indexes
     where schemaname = 'public'
-      and indexname = 'connections_game_sessions_one_user_daily_idx'
+      and indexname = 'connections_game_sessions_one_user_date_mode_idx'
       and indexdef ilike 'create unique%'
   ),
   'Connections enforces one authenticated session per daily date'
