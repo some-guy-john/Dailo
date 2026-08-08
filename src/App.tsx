@@ -21,20 +21,22 @@ import { getAuthRedirectUrl, supabase } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import { parseVersusRoute, versusHash, type VersusRoute } from './versus/routing'
 import { VersusScreen } from './versus/VersusScreen'
+import { AdminScreen } from './admin/AdminScreen'
 
 const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
 const PRAISE = ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew']
 
-type Screen = 'play' | 'games' | 'archive' | 'connections' | 'versus'
+type Screen = 'play' | 'games' | 'archive' | 'connections' | 'versus' | 'admin'
 type Dialog = 'stats' | 'help' | 'settings' | 'account' | null
 type AuthMode = 'signin' | 'signup' | 'reset' | 'update'
 
 function App() {
   const initialVersusRoute = typeof window === 'undefined' ? null : parseVersusRoute(window.location.hash)
+  const initialAdmin = typeof window !== 'undefined' && window.location.hash === '#/admin'
   const [today, setToday] = useState(getLondonDate)
   const [mode, setMode] = useState<GameMode>('daily')
-  const [screen, setScreen] = useState<Screen>(initialVersusRoute ? 'versus' : 'play')
+  const [screen, setScreen] = useState<Screen>(initialAdmin ? 'admin' : initialVersusRoute ? 'versus' : 'play')
   const [versusRoute, setVersusRoute] = useState<VersusRoute | null>(initialVersusRoute)
   const [archiveDate, setArchiveDate] = useState<string | null>(null)
   const [archivePuzzles, setArchivePuzzles] = useState<Awaited<ReturnType<typeof listArchivePuzzles>>>([])
@@ -146,6 +148,7 @@ function App() {
       const route = parseVersusRoute(window.location.hash)
       setVersusRoute(route)
       if (route) setScreen('versus')
+      else if (window.location.hash === '#/admin') setScreen('admin')
     }
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)
@@ -710,7 +713,7 @@ function App() {
             </svg>
           </button>
         </div>
-        <h1>{screen === 'games' || screen === 'archive' ? 'Dailo' : screen === 'connections' ? 'Connections' : screen === 'versus' ? 'Wordo Versus' : 'Wordo'}</h1>
+        <h1>{screen === 'games' || screen === 'archive' || screen === 'admin' ? 'Dailo' : screen === 'connections' ? 'Connections' : screen === 'versus' ? 'Wordo Versus' : 'Wordo'}</h1>
         <div className="bar-right">
           <button className="icon-button account-button" type="button" aria-label="Account" onClick={openAccount}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -732,7 +735,7 @@ function App() {
         </div>
       </header>
 
-      {screen === 'games' ? (
+      {screen === 'admin' ? <AdminScreen /> : screen === 'games' ? (
         <section className="screen" aria-label="All games">
           <div className="hub">
             <div className="hub-date">

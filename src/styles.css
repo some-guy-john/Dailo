@@ -286,6 +286,19 @@ button { font: inherit; color: inherit; }
 .account-history-summary span { color: var(--text-soft); font-size: 10px; }
 .account-history-list { display: grid; margin-top: 10px; border-top: 1px solid var(--line); }
 .account-history-list div { display: flex; justify-content: space-between; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.admin-screen { padding: 28px 18px 60px; }
+.admin-shell { width: min(100%, 980px); margin: auto; }
+.admin-heading span { color: var(--present); font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.admin-heading h2 { margin: 5px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 2.5rem; }
+.admin-heading p { color: var(--text-soft); }
+.admin-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 24px 0; }
+.admin-columns > div, .admin-editor, .admin-audit { padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.admin-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.admin-row button { padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; cursor: pointer; }
+.admin-editor textarea { width: 100%; min-height: 360px; margin: 10px 0; padding: 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-raised); color: var(--text); font-family: monospace; font-size: 12px; resize: vertical; }
+.admin-audit { margin-top: 20px; }
+.admin-audit div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; }
+.admin-audit time { color: var(--text-soft); }
 .account-note { margin-top: 16px; text-align: center; }
 
 /* ---------- board ---------- */

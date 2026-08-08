@@ -41,6 +41,7 @@ The deployed Release 1 experience includes:
 - Connections sharing, local statistics, and signed-in verified Daily result sync
 - Protected private Wordo Versus match lifecycle with anonymous invite capabilities
 - Signed-in verified Wordo Daily and Unlimited history with separate device-only legacy totals
+- Allowlisted audited puzzle administration for schedule review and Connections draft publishing
 - London-time daily rollover handling
 - Browser-local stats, streaks, preferences, and refresh recovery
 - Responsive mobile and desktop layout with reduced-motion and high-contrast options

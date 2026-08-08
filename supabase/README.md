@@ -12,7 +12,8 @@ The Dailo Release 1 backend keeps Wordo answers and Connections group data behin
 6. Validate, review, schedule, and publish Connections content with the scripts documented in `content/README.md`.
 7. Deploy `functions/wordle`.
 8. Deploy `functions/wordo-versus`.
-9. Configure the frontend with the public Supabase URL and anon key only.
+9. Deploy `functions/dailo-admin`.
+10. Configure the frontend with the public Supabase URL and anon key only.
 
 The Edge Function uses `SUPABASE_SERVICE_ROLE_KEY` server-side. Never put that value in the frontend, repository, or issue tracker.
 
@@ -111,6 +112,19 @@ Versus answers are selected from active curated answers after excluding all draf
 ## Account History
 
 Confirmed users may retrieve `account-history`, which is derived from completed server sessions owned by their account. Daily and Unlimited sessions remain anonymously playable. A session is linked to an account only when it is created while authenticated or when the signed-in player proves possession of its existing opaque token. Browser-only summaries are displayed separately and are never uploaded as authoritative history.
+
+## Puzzle Administration
+
+The admin panel is available only by direct hash route at `#/admin`; it is not linked from public game navigation. The `dailo-admin` function requires a confirmed user whose UUID is present in the protected comma-separated `DAILO_ADMIN_USER_IDS` function secret. An empty or missing allowlist denies every account.
+
+Configure the allowlist and environment label before administrator use:
+
+```powershell
+npx supabase secrets set --project-ref imndxrsbavywbsnyreyz DAILO_ADMIN_USER_IDS="user-uuid" DAILO_ENVIRONMENT="production"
+npx supabase functions deploy dailo-admin --project-ref imndxrsbavywbsnyreyz
+```
+
+The first panel provides read-only Wordo schedule visibility plus Connections draft validation, creation, and explicit publication. It never grants direct table access, never replaces an existing date, and records create/publish actions in `dailo_admin_audit`. Published puzzle content remains protected by database immutability rules.
 
 ## Content Import
 

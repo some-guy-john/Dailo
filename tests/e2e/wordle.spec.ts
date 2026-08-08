@@ -248,6 +248,35 @@ test.describe('protected Wordo play', () => {
     expect(dailyStarts).toBe(0)
   })
 
+  test('keeps puzzle administration on a protected direct route', async ({ page }) => {
+    let created = false
+    let published = false
+    await page.addInitScript(() => {
+      window.confirm = () => true
+      window.localStorage.setItem('sb-imndxrsbavywbsnyreyz-auth-token', JSON.stringify({
+        access_token: 'admin-test-access-token', refresh_token: 'admin-test-refresh-token', token_type: 'bearer', expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'admin-test-user', email: 'admin@example.test', email_confirmed_at: new Date().toISOString(), role: 'authenticated' },
+      }))
+    })
+    await page.route('**/auth/v1/**', async (route) => route.fulfill({ contentType: 'application/json', body: '{}' }))
+    await page.route('**/functions/v1/dailo-admin', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action === 'connections-create-draft') created = true
+      if (body.action === 'connections-publish') published = true
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body.action === 'overview' ? {
+        environment: 'development', wordo: [{ london_date: '2026-08-08', status: 'published' }], connections: [{ london_date: '2026-08-09', status: 'draft' }], audit: [],
+      } : { puzzle: { london_date: '2026-08-09', status: body.action === 'connections-publish' ? 'published' : 'draft' } }) })
+    })
+    await page.goto('/#/admin')
+    await expect(page.getByRole('region', { name: 'Puzzle administration' })).toContainText('Environment: development')
+    await page.getByRole('button', { name: 'Validate and create draft' }).click()
+    await expect.poll(() => created).toBe(true)
+    await page.getByRole('button', { name: 'Publish' }).click()
+    await expect.poll(() => published).toBe(true)
+    await page.getByRole('button', { name: 'All games' }).click()
+    await expect(page).not.toHaveURL(/#\/admin/)
+  })
+
   test('creates and restores a private Versus waiting room', async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { (window as unknown as { invite: string }).invite = text } } }))
     await page.route('**/functions/v1/wordo-versus', async (route) => {
