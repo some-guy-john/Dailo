@@ -284,7 +284,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------- board ---------- */
 
-.play-screen { justify-content: safe center; }
+.play-screen { justify-content: flex-start; }
 .mode-tabs { display: flex; justify-content: center; gap: 6px; padding: 10px 0 4px; flex: none; }
 .mode-tabs button {
   padding: 7px 15px;
@@ -300,6 +300,7 @@ button { font: inherit; color: inherit; }
 .mode-tabs button[aria-pressed='true'] { background: var(--key-bg); color: var(--text); }
 
 .board-area { flex: none; display: flex; align-items: center; justify-content: center; padding: 12px 16px 24px; }
+.play-screen .board-area { margin-top: auto; }
 
 .board-card {
   width: min(calc(100vw - 20px), 380px);
@@ -348,7 +349,7 @@ button { font: inherit; color: inherit; }
 
 .keyboard {
   width: min(100%, 600px);
-  margin: 32px auto 0;
+  margin: 32px auto auto;
   display: grid;
   gap: 8px;
   padding: 0 14px 24px;
