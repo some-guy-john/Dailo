@@ -1,0 +1,14 @@
+{
+  "puzzles": [
+    {
+      "date": "2026-08-08",
+      "status": "draft",
+      "groups": [
+        { "key": "fruit", "label": "Fruit", "difficulty": 1, "words": ["APPLE", "MANGO", "PEAR", "PLUM"] },
+        { "key": "strings", "label": "String instruments", "difficulty": 2, "words": ["HARP", "GUITAR", "VIOLIN", "CELLO"] },
+        { "key": "shapes", "label": "Shapes", "difficulty": 3, "words": ["CIRCLE", "OVAL", "SQUARE", "TRIANGLE"] },
+        { "key": "cats", "label": "Big cats", "difficulty": 4, "words": ["LION", "PUMA", "TIGER", "LEOPARD"] }
+      ]
+    }
+  ]
+}

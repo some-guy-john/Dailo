@@ -9,7 +9,7 @@ The Dailo Release 1 backend keeps Wordo answers and Connections group data behin
 3. Apply the SQL migration in `migrations/`.
 4. Import reviewed Wordo content into `wordle_words`.
 5. Add published rows to `wordle_daily_assignments` using `Europe/London` calendar dates.
-6. Add published Connections rows to `connections_daily_puzzles` using `Europe/London` calendar dates.
+6. Validate, review, schedule, and publish Connections content with the scripts documented in `content/README.md`.
 7. Deploy `functions/wordle`.
 8. Configure the frontend with the public Supabase URL and anon key only.
 
@@ -92,6 +92,8 @@ Connections submission:
 ```
 
 Connections returns the 16 playable words and solved groups, but does not return unsolved group labels or memberships until the puzzle is complete. A player has four mistakes.
+
+Each Connections group has one unique difficulty from 1 through 4. The database enforces a complete partition of 16 unique normalized words, protects published puzzle content from ordinary mutation, and permits the submission RPC only through the service-role Edge Function.
 
 ## Content Import
 

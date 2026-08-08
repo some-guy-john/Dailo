@@ -1,4 +1,6 @@
-# Wordo Content
+# Dailo Content
+
+## Wordo
 
 The current source lists are:
 
@@ -77,3 +79,33 @@ npm run publish:dailies -- 2026-08-08 30
 ```
 
 Scheduling only inserts missing dates into `public.wordle_daily_assignments`. It never replaces an existing assignment and does not touch any other table.
+
+## Connections
+
+Connections source files use the versioned shape demonstrated by `connections-puzzles.example.json`. Every puzzle must contain four groups with unique difficulty levels from 1 through 4. The validator normalizes words and requires exactly 16 unique board words partitioned into four groups of four.
+
+Validate without writing to Supabase:
+
+```powershell
+npm run validate:connections -- content/connections-puzzles.example.json
+```
+
+Insert validated puzzles as drafts. Existing dates are never replaced:
+
+```powershell
+npm run schedule:connections -- content/connections-puzzles.example.json
+```
+
+Run the read-only database comparison and resolve every `BLOCK` row:
+
+```powershell
+npm run review:connections -- content/connections-puzzles.example.json
+```
+
+After editorial review, publish only the intended date range:
+
+```powershell
+npm run publish:connections -- 2026-08-08 2026-09-06
+```
+
+Difficulty levels map consistently to the game's yellow, green, blue, and purple groups. Automated validation checks structure, but category clarity, misleading overlaps, factual accuracy, and difficulty still require human review. Published puzzle words, groups, and dates are immutable through ordinary updates.
