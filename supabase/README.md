@@ -15,7 +15,7 @@ The Dailo Release 1 backend keeps Wordo answers and Connections group data behin
 9. Deploy `functions/dailo-admin` with gateway JWT verification disabled.
 10. Configure the frontend with the public Supabase URL and anon key only.
 
-Apply migrations before deploying functions. The current rollout order ends with `202608080009` through `202608080015`. Migration `202608080011` adds published-content immutability, safe retired-answer handling, transactional admin writes, and the service-role rate-limit RPC used by all functions. Migrations `202608080012` and `202608080013` remove the remaining SQL-lint warnings from the scoring function. Migration `202608080014` removes browser execution privileges from trigger-only functions. Migration `202608080015` adds stale rate-limit bucket cleanup.
+Apply migrations before deploying functions. The current rollout order ends with `202608080009` through `202608080016`. Migration `202608080011` adds published-content immutability, safe retired-answer handling, transactional admin writes, and the service-role rate-limit RPC used by all functions. Migrations `202608080012` and `202608080013` remove the remaining SQL-lint warnings from the scoring function. Migration `202608080014` removes browser execution privileges from trigger-only functions. Migration `202608080015` adds opportunistic stale rate-limit cleanup, and `202608080016` exposes deterministic service-role cleanup for operations and tests.
 
 The Edge Functions use `SUPABASE_SERVICE_ROLE_KEY` server-side. Never put that value in the frontend, repository, or issue tracker. Gateway JWT verification is disabled because the functions accept anonymous game requests and perform their own request-level authentication for Archive and administration actions. Deploy with `--no-verify-jwt`; do not rely on the gateway to authorize these endpoints.
 
@@ -26,6 +26,8 @@ npx supabase functions deploy dailo-admin --project-ref imndxrsbavywbsnyreyz --n
 ```
 
 The local database lint and migration reset require Docker. CI runs `supabase db lint --local` before the frontend build; a local lint failure caused by a stopped Docker daemon is an environment issue, not a migration result.
+
+CI also runs `npm run typecheck:functions` with Deno before the application and database tests.
 
 ## Function Contract
 

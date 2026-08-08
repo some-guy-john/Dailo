@@ -1,6 +1,6 @@
 begin;
 
-select plan(25);
+select plan(32);
 
 select is(
   public.wordle_score_guess('CRANE', 'CRATE'),
@@ -197,6 +197,68 @@ select ok(
   has_table_privilege('anon', 'public.dailo_rate_limits', 'SELECT') = false
     and has_table_privilege('authenticated', 'public.dailo_rate_limits', 'SELECT') = false,
   'Rate-limit buckets are not readable by browser roles'
+);
+
+insert into public.dailo_rate_limits (bucket_key, window_started_at, request_count, updated_at)
+values
+  ('stale-cleanup-test', now() - interval '3 days', 1, now() - interval '3 days'),
+  ('fresh-cleanup-test', now(), 1, now());
+
+select is(
+  public.dailo_cleanup_rate_limits(now() - interval '2 days'),
+  1,
+  'Rate-limit cleanup removes stale buckets'
+);
+
+select ok(
+  not exists (select 1 from public.dailo_rate_limits where bucket_key = 'stale-cleanup-test')
+    and exists (select 1 from public.dailo_rate_limits where bucket_key = 'fresh-cleanup-test'),
+  'Rate-limit cleanup preserves current buckets'
+);
+
+select ok(
+  has_function_privilege('anon', 'public.dailo_cleanup_rate_limits(timestamp with time zone)', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.dailo_cleanup_rate_limits(timestamp with time zone)', 'EXECUTE') = false,
+  'Rate-limit cleanup is not callable by browser roles'
+);
+
+select throws_ok(
+  $$ select public.dailo_create_connections_draft(
+    gen_random_uuid(),
+    date '2099-01-02',
+    '["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"]'::jsonb,
+    '[{}, {}, {}, {}]'::jsonb
+  ) $$,
+  '23503',
+  null,
+  'Admin draft creation rejects an unknown audit user'
+);
+
+select is(
+  (select count(*)::integer from public.connections_daily_puzzles where london_date = date '2099-01-02'),
+  0,
+  'Failed admin draft creation rolls back the puzzle insert'
+);
+
+insert into public.connections_daily_puzzles (london_date, words, groups, status)
+values (
+  date '2099-01-03',
+  '["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"]'::jsonb,
+  '[{}, {}, {}, {}]'::jsonb,
+  'draft'
+);
+
+select throws_ok(
+  $$ select public.dailo_publish_connections(gen_random_uuid(), date '2099-01-03') $$,
+  '23503',
+  null,
+  'Admin publication rejects an unknown audit user'
+);
+
+select is(
+  (select status from public.connections_daily_puzzles where london_date = date '2099-01-03'),
+  'draft',
+  'Failed admin publication rolls back the status update'
 );
 
 select * from finish();

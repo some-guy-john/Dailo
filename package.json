@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "test:release-auth": "node scripts/release-auth-smoke.mjs",
     "health:production": "node scripts/production-health-check.mjs",
+    "typecheck:functions": "deno check --no-config supabase/functions/wordle/index.ts supabase/functions/wordo-versus/index.ts supabase/functions/dailo-admin/index.ts",
     "validate:content": "node scripts/validate-wordle-content.mjs",
     "validate:connections": "node scripts/validate-connections-content.mjs",
     "schedule:connections": "node scripts/schedule-connections.mjs",

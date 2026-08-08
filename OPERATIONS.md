@@ -96,7 +96,7 @@ Logs must not contain bearer tokens, session tokens, answer words before complet
 
 ## Rate-Limit Maintenance
 
-Rate-limit buckets are hashed and safe to remove after their window has elapsed. Migration `202608080015` adds opportunistic cleanup; no manual cleanup is normally required.
+Rate-limit buckets are hashed and safe to remove after their window has elapsed. Migration `202608080015` adds opportunistic cleanup and `202608080016` adds deterministic service-role cleanup; no manual cleanup is normally required.
 
 If the table grows unexpectedly, inspect counts and age through an authenticated operator connection, then remove only stale rows after confirming no incident investigation depends on them. Never grant browser roles access to `dailo_rate_limits`.
 
