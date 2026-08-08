@@ -713,7 +713,7 @@ async function listArchive(body: Record<string, unknown>, request: Request) {
   return {
     archives: (assignments ?? []).map((assignment) => ({
       date: assignment.london_date,
-      puzzleId: (assignment.wordle_words as { public_key: string }).public_key,
+      puzzleId: (assignment.wordle_words as unknown as { public_key: string }).public_key,
       status: statusByDate.get(assignment.london_date) ?? null,
     })),
   }
@@ -751,7 +751,7 @@ async function accountHistory(request: Request) {
     .order('completed_at', { ascending: false }).limit(500)
   if (error) throw new RequestError('temporary_server_failure', error.message, 503)
   return { accountHistory: (data ?? []).map((session) => ({
-    mode: session.mode, date: session.daily_date, puzzleId: (session.wordle_words as { public_key: string }).public_key,
+    mode: session.mode, date: session.daily_date, puzzleId: (session.wordle_words as unknown as { public_key: string }).public_key,
     won: session.status === 'won', guesses: session.attempt_count, completedAt: session.completed_at,
   })) }
 }

@@ -71,7 +71,7 @@ async function stateFor(token: string) {
     attempts: (attempts ?? []).map((attempt) => ({ guess: attempt.guess_word, result: attempt.tile_result })),
     opponentRows,
     answer: (match.status === 'completed' && !hasConcession) || (match.status === 'expired' && match.joined_at !== null)
-      ? (match.wordle_words as { normalized_word: string }).normalized_word
+      ? (match.wordle_words as unknown as { normalized_word: string }).normalized_word
       : null,
     outcome, expiresAt: match.expires_at,
   }
