@@ -6,6 +6,7 @@ export type VersusMatchStatus = 'waiting' | 'active' | 'completed' | 'expired' |
 export type VersusMatch = {
   publicKey: string
   participantToken: string
+  inviteToken?: string
   status: VersusMatchStatus
   playerName: string
   opponentName: string | null

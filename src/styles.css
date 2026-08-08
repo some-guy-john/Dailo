@@ -306,6 +306,26 @@ button { font: inherit; color: inherit; }
 .versus-intro > p { color: var(--text-soft); line-height: 1.5; }
 .versus-rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 24px 0; }
 .versus-rules b { padding: 12px 6px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+.versus-name { display: grid; gap: 6px; margin: 22px auto 16px; color: var(--text-soft); font-size: 11px; font-weight: 700; text-align: left; }
+.versus-name input { min-height: 44px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-raised); color: var(--text); font: inherit; font-size: 15px; }
+.versus-game-screen { padding: 22px 18px 12px; }
+.versus-match-head { width: min(100%, 760px); margin: 0 auto 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.versus-match-head span { color: var(--present); font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.versus-match-head h2 { margin: 3px 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.7rem, 6vw, 2.4rem); letter-spacing: -0.04em; }
+.versus-play-area { width: min(100%, 760px); margin: 0 auto; display: grid; grid-template-columns: minmax(250px, 340px) minmax(190px, 1fr); align-items: start; gap: 24px; }
+.versus-board { display: grid; gap: 6px; padding: 13px; border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; background: var(--surface); }
+.versus-board .board-row { gap: 6px; }
+.versus-board .tile { font-size: clamp(1.2rem, 5vw, 1.8rem); }
+.opponent-progress { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 5px 14px 14px 14px; background: var(--surface); }
+.opponent-progress > div { display: grid; gap: 6px; }
+.opponent-progress small { color: var(--text-soft); text-transform: capitalize; }
+.opponent-row { display: grid; grid-template-columns: repeat(5, 24px); gap: 4px; }
+.opponent-row i { aspect-ratio: 1; border-radius: 3px; background: var(--line); }
+.opponent-row i[data-state='correct'] { background: var(--correct); }
+.opponent-row i[data-state='present'] { background: var(--present); }
+.opponent-row i[data-state='absent'] { background: var(--absent); }
+.versus-keyboard { margin-top: 18px; }
+.versus-result { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 22px auto; }
 .connections-heading { text-align: center; }
 .connections-heading > span { color: var(--present); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .connections-heading h2 { margin: 4px 0 2px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(2rem, 8vw, 2.8rem); letter-spacing: -0.05em; }
@@ -723,6 +743,14 @@ button { font: inherit; color: inherit; }
   .connections-game { padding: 24px 16px 36px; }
   .connections-grid { gap: 6px; }
   .connections-word { min-height: 64px; padding: 6px 4px; font-size: 11px; }
+  .versus-intro { padding: 28px 18px; }
+  .versus-game-screen { padding: 14px 8px 8px; }
+  .versus-match-head { align-items: flex-end; padding: 0 6px; }
+  .versus-play-area { grid-template-columns: 1fr; gap: 12px; }
+  .versus-board { width: min(100%, 330px); margin: auto; }
+  .opponent-progress { width: min(100%, 330px); margin: auto; padding: 12px 15px; }
+  .opponent-progress > div { display: flex; flex-wrap: wrap; }
+  .versus-keyboard { margin-top: 10px; }
 }
 
 @media (min-width: 501px) and (max-height: 820px) {

@@ -223,6 +223,86 @@ test.describe('protected Wordo play', () => {
     expect(dailyStarts).toBe(0)
   })
 
+  test('creates and restores a private Versus waiting room', async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { (window as unknown as { invite: string }).invite = text } } }))
+    await page.route('**/functions/v1/wordo-versus', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      const state = { publicKey: '550e8400-e29b-41d4-a716-446655440000', status: 'waiting', playerName: 'Alice', opponentName: null, playerStatus: 'waiting', opponentStatus: null, attempts: [], opponentRows: [], answer: null, outcome: null, expiresAt: '2026-08-09T00:00:00Z' }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body.action === 'create'
+        ? { inviteToken: 'abcdefghijklmnop', participantToken: 'alice-participant-token', state }
+        : { participantToken: 'alice-participant-token', state }) })
+    })
+    await page.goto('/#/wordo/versus')
+    await page.getByLabel('Display name').fill('Alice')
+    await page.getByRole('button', { name: 'Create match' }).click()
+    await expect(page).toHaveURL(/match\/550e8400-e29b-41d4-a716-446655440000/)
+    await page.getByRole('button', { name: 'Copy invite' }).click()
+    expect(await page.evaluate(() => (window as unknown as { invite: string }).invite)).toContain('#/wordo/versus/invite/abcdefghijklmnop')
+    await page.reload()
+    await expect(page.getByRole('region', { name: 'Wordo Versus match' })).toContainText('Waiting room')
+    await page.getByRole('button', { name: 'Copy invite' }).click()
+    expect(await page.evaluate(() => (window as unknown as { invite: string }).invite)).toContain('#/wordo/versus/invite/abcdefghijklmnop')
+    expect(page.url()).not.toContain('alice-participant-token')
+  })
+
+  test('explicitly joins and plays Versus without exposing opponent letters', async ({ page }) => {
+    let guessed = false
+    await page.route('**/functions/v1/wordo-versus', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string; displayName?: string; guess?: string }
+      if (body.action === 'join') expect(body.displayName).toBe('Bob')
+      if (body.action === 'guess') { expect(body.guess).toBe('CRANE'); guessed = true }
+      const state = { publicKey: '550e8400-e29b-41d4-a716-446655440000', status: 'active', playerName: 'Bob', opponentName: 'Alice', playerStatus: 'playing', opponentStatus: 'playing', attempts: guessed ? [{ guess: 'CRANE', result: ['absent', 'present', 'absent', 'absent', 'correct'] }] : [], opponentRows: [['correct', 'absent', 'present', 'absent', 'absent']], answer: null, outcome: null, expiresAt: '2026-08-09T00:00:00Z' }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ participantToken: 'bob-participant-token', state }) })
+    })
+    await page.goto('/#/wordo/versus/invite/abcdefghijklmnop')
+    await page.getByLabel('Display name').fill('Bob')
+    await page.getByRole('button', { name: 'Join match' }).click()
+    await expect(page.getByRole('region', { name: 'Wordo Versus match' })).toContainText('Bob vs Alice')
+    await expect(page.locator('.opponent-row i')).toHaveCount(5)
+    await expect(page.locator('.opponent-progress')).not.toContainText(/[A-Z]{5}/)
+    await page.keyboard.type('CRANE')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.versus-board .board-row').first()).toContainText('C')
+    await expect(page.locator('.versus-board .board-row').first()).toContainText('E')
+    expect(guessed).toBe(true)
+  })
+
+  test('concedes a Versus match and starts a fresh match flow', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('dailies:wordo-versus:v1:550e8400-e29b-41d4-a716-446655440000', JSON.stringify({
+        publicKey: '550e8400-e29b-41d4-a716-446655440000', participantToken: 'concede-token', status: 'active', playerName: 'Alice', opponentName: 'Bob', playerStatus: 'playing', opponentStatus: 'playing', attempts: [], opponentRows: [], answer: null, outcome: null, expiresAt: '2026-08-09T00:00:00Z',
+      }))
+      window.confirm = () => true
+    })
+    await page.route('**/functions/v1/wordo-versus', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      const completed = body.action === 'concede'
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ participantToken: 'concede-token', state: {
+        publicKey: '550e8400-e29b-41d4-a716-446655440000', status: completed ? 'completed' : 'active', playerName: 'Alice', opponentName: 'Bob', playerStatus: completed ? 'conceded' : 'playing', opponentStatus: 'playing', attempts: [], opponentRows: [], answer: completed ? 'CRANE' : null, outcome: completed ? 'loss' : null, expiresAt: '2026-08-09T00:00:00Z',
+      } }) })
+    })
+    await page.goto('/#/wordo/versus/match/550e8400-e29b-41d4-a716-446655440000')
+    await page.getByRole('button', { name: 'Concede' }).click()
+    await expect(page.getByRole('region', { name: 'Wordo Versus match' })).toContainText('Opponent won')
+    await expect(page.getByRole('region', { name: 'Wordo Versus match' })).toContainText('The word was CRANE')
+    await page.getByRole('button', { name: 'New match' }).click()
+    await expect(page).toHaveURL(/#\/wordo\/versus$/)
+    await expect(page.getByRole('button', { name: 'Create match' })).toBeVisible()
+  })
+
+  test('fits an active Versus match at 320 pixels wide', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.addInitScript(() => window.localStorage.setItem('dailies:wordo-versus:v1:550e8400-e29b-41d4-a716-446655440000', JSON.stringify({
+      publicKey: '550e8400-e29b-41d4-a716-446655440000', participantToken: 'mobile-token', status: 'active', playerName: 'Alice', opponentName: 'Bob', playerStatus: 'playing', opponentStatus: 'playing', attempts: [], opponentRows: [['correct', 'present', 'absent', 'absent', 'absent']], answer: null, outcome: null, expiresAt: '2026-08-09T00:00:00Z',
+    })))
+    await page.route('**/functions/v1/wordo-versus', async (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ participantToken: 'mobile-token', state: {
+      publicKey: '550e8400-e29b-41d4-a716-446655440000', status: 'active', playerName: 'Alice', opponentName: 'Bob', playerStatus: 'playing', opponentStatus: 'playing', attempts: [], opponentRows: [['correct', 'present', 'absent', 'absent', 'absent']], answer: null, outcome: null, expiresAt: '2026-08-09T00:00:00Z',
+    } }) }))
+    await page.goto('/#/wordo/versus/match/550e8400-e29b-41d4-a716-446655440000')
+    await expect(page.locator('.versus-board .tile')).toHaveCount(30)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
+  })
+
   test('opens and plays the protected Connections board', async ({ page }) => {
     await page.route('**/functions/v1/wordle', async (route) => {
       const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }

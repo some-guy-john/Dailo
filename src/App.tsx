@@ -20,6 +20,7 @@ import type { ConnectionsSession, GameMode, GameSession, Stats, TileState } from
 import { getAuthRedirectUrl, supabase } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import { parseVersusRoute, versusHash, type VersusRoute } from './versus/routing'
+import { VersusScreen } from './versus/VersusScreen'
 
 const KEYBOARD_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM']
 const EMPTY_KEYBOARD: Record<string, TileState> = {}
@@ -510,6 +511,12 @@ function App() {
     setScreen('versus')
   }
 
+  function changeVersusRoute(route: VersusRoute) {
+    window.location.hash = versusHash(route)
+    setVersusRoute(route)
+    setScreen('versus')
+  }
+
   function openConnectionsArchive() {
     setDialog(null)
     setConnectionsSession(null)
@@ -770,17 +777,7 @@ function App() {
           </div>
         </section>
       ) : screen === 'versus' ? (
-        <section className="screen versus-screen" aria-label="Wordo Versus">
-          <div className="versus-intro">
-            <span>Private match</span>
-            <h2>{versusRoute?.kind === 'invite' ? 'You’ve been challenged' : versusRoute?.kind === 'match' ? 'Return to your match' : 'Wordo, head to head'}</h2>
-            <p>{versusRoute?.kind === 'invite' ? 'Choose a display name to claim the open seat.' : versusRoute?.kind === 'match' ? 'This browser will restore its protected participant session.' : 'Create an untimed match, share one private link, and win by solving in fewer guesses.'}</p>
-            <div className="versus-rules">
-              <b>Two players</b><b>Six guesses</b><b>24 hours</b>
-            </div>
-            <p className="fine">The match service is being connected in the next feature slice. Daily and Unlimited statistics stay separate.</p>
-          </div>
-        </section>
+        <VersusScreen route={versusRoute ?? { kind: 'create' }} onRoute={changeVersusRoute} />
       ) : screen === 'connections' ? (
         <section className="screen connections-screen" aria-label={connectionsArchiveOpen ? 'Connections archive' : 'Connections game'}>
           <div className="connections-game">
