@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(25);
 
 select is(
   public.wordle_score_guess('CRANE', 'CRATE'),
@@ -54,6 +54,149 @@ select ok(
   has_function_privilege('anon', 'public.dailo_consume_rate_limit(text,integer,integer)', 'EXECUTE') = false
     and has_function_privilege('authenticated', 'public.dailo_consume_rate_limit(text,integer,integer)', 'EXECUTE') = false,
   'Rate-limit RPC is not callable by browser roles'
+);
+
+select throws_ok(
+  $$ select public.wordle_submit_guess('missing-token', 'CRANE', 1, 'missing-key') $$,
+  'P0001',
+  'invalid_session',
+  'Wordo rejects unknown session tokens'
+);
+
+select throws_ok(
+  $$ select public.connections_submit_guess('missing-token', '["APPLE", "MANGO", "PEAR", "PLUM"]'::jsonb, 'missing-key') $$,
+  'P0001',
+  'invalid_session',
+  'Connections rejects unknown session tokens'
+);
+
+select throws_ok(
+  $$ select public.wordle_claim_or_find_session(gen_random_uuid(), gen_random_uuid()) $$,
+  'P0001',
+  'invalid_session',
+  'Wordo ownership claims reject missing sessions'
+);
+
+select throws_ok(
+  $$ select public.connections_claim_or_find_session(gen_random_uuid(), gen_random_uuid()) $$,
+  'P0001',
+  'invalid_session',
+  'Connections ownership claims reject missing sessions'
+);
+
+select throws_ok(
+  $$ select public.wordle_versus_concede('missing-token') $$,
+  'P0001',
+  'invalid_participant',
+  'Versus rejects unknown participant tokens'
+);
+
+select is(
+  public.wordle_versus_expire(gen_random_uuid())->>'status',
+  'missing',
+  'Versus expiry is safe for missing matches'
+);
+
+select ok(
+  public.wordle_session_id_for_token('missing-token') is null,
+  'Wordo token lookup does not resolve unknown tokens'
+);
+
+select ok(
+  public.connections_session_id_for_token('missing-token') is null,
+  'Connections token lookup does not resolve unknown tokens'
+);
+
+select ok(
+  exists (
+    select 1 from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'wordle_game_sessions_one_user_date_mode_idx'
+      and indexdef ilike 'create unique%'
+  ),
+  'Wordo enforces one authenticated session per date and mode'
+);
+
+select ok(
+  exists (
+    select 1 from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'connections_game_sessions_one_user_daily_idx'
+      and indexdef ilike 'create unique%'
+  ),
+  'Connections enforces one authenticated session per daily date'
+);
+
+select ok(
+  has_function_privilege('anon', 'public.wordle_claim_or_find_session(uuid,uuid)', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.wordle_claim_or_find_session(uuid,uuid)', 'EXECUTE') = false
+    and has_function_privilege('anon', 'public.connections_claim_or_find_session(uuid,uuid)', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.connections_claim_or_find_session(uuid,uuid)', 'EXECUTE') = false,
+  'Authenticated session ownership RPCs are service-role only'
+);
+
+select ok(
+  has_function_privilege('anon', 'public.wordle_versus_concede(text)', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.wordle_versus_concede(text)', 'EXECUTE') = false
+    and has_function_privilege('anon', 'public.wordle_versus_expire(uuid)', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.wordle_versus_expire(uuid)', 'EXECUTE') = false,
+  'Versus lifecycle RPCs are service-role only'
+);
+
+select ok(
+  has_table_privilege('anon', 'public.wordle_game_session_tokens', 'SELECT') = false
+    and has_table_privilege('authenticated', 'public.wordle_game_session_tokens', 'SELECT') = false
+    and has_table_privilege('anon', 'public.connections_game_session_tokens', 'SELECT') = false
+    and has_table_privilege('authenticated', 'public.connections_game_session_tokens', 'SELECT') = false,
+  'Cross-device capability tables are not readable by browser roles'
+);
+
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.wordle_attempts'::regclass
+      and contype = 'u'
+      and pg_get_constraintdef(oid) ilike '%idempotency_key%'
+  )
+  and exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.connections_attempts'::regclass
+      and contype = 'u'
+      and pg_get_constraintdef(oid) ilike '%idempotency_key%'
+  ),
+  'Wordo and Connections attempts enforce idempotency uniqueness'
+);
+
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.wordle_game_sessions'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%attempt_count%>= 0%'
+      and pg_get_constraintdef(oid) ilike '%attempt_count%<= 6%'
+  )
+  and exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.connections_game_sessions'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%mistake_count%>= 0%'
+      and pg_get_constraintdef(oid) ilike '%mistake_count%<= 4%'
+  ),
+  'Game lifecycle counters remain bounded by database constraints'
+);
+
+select ok(
+  has_function_privilege('anon', 'public.protect_wordle_daily_assignment()', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.protect_wordle_daily_assignment()', 'EXECUTE') = false
+    and has_function_privilege('anon', 'public.protect_connections_published_content()', 'EXECUTE') = false
+    and has_function_privilege('authenticated', 'public.protect_connections_published_content()', 'EXECUTE') = false,
+  'Content protection trigger functions are not callable by browser roles'
+);
+
+select ok(
+  has_table_privilege('anon', 'public.dailo_rate_limits', 'SELECT') = false
+    and has_table_privilege('authenticated', 'public.dailo_rate_limits', 'SELECT') = false,
+  'Rate-limit buckets are not readable by browser roles'
 );
 
 select * from finish();
