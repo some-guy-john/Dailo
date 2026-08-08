@@ -255,12 +255,59 @@ test.describe('protected Wordo play', () => {
     const connections = page.getByRole('region', { name: 'Connections game' })
     await expect(connections.getByRole('heading', { name: 'Connections' })).toBeVisible()
     await expect(connections.locator('.connections-word')).toHaveCount(8)
+    await expect(connections.getByRole('group', { name: 'Word selection, 0 of 4 selected' })).toBeVisible()
     for (const word of ['APPLE', 'MANGO', 'PEAR', 'PLUM']) {
       await page.getByRole('button', { name: word, exact: true }).click()
     }
+    await expect(page.getByRole('button', { name: 'APPLE', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await page.getByRole('button', { name: 'Submit' }).click()
     await expect(connections.getByText('Fruit', { exact: true })).toBeVisible()
     await expect(connections.locator('.connections-word')).toHaveCount(4)
+  })
+
+  test('shows Connections instructions and retries a failed puzzle load', async ({ page }) => {
+    let starts = 0
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action !== 'connections-start') return route.continue()
+      starts += 1
+      if (starts === 1) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'temporary_server_failure', message: 'Connections is briefly unavailable.' } }) })
+        return
+      }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        sessionToken: 'retry-connections-token',
+        connections: { state: { mode: 'daily', puzzleId: 'retry-puzzle', date: '2026-08-08', words: ['APPLE', 'MANGO', 'PEAR', 'PLUM'], solvedGroups: [], attempts: [], mistakeCount: 0, maxMistakes: 4, status: 'active' } },
+      }) })
+    })
+
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Connections/ }).click()
+    await expect(page.getByRole('alert')).toContainText('Connections is briefly unavailable.')
+    await page.getByRole('button', { name: 'Retry' }).click()
+    await expect(page.locator('.connections-word')).toHaveCount(4)
+    await page.getByRole('button', { name: 'How to play' }).click()
+    await expect(page.getByRole('dialog', { name: 'How to play' })).toContainText('Find four groups of four related words.')
+    await expect(page.getByRole('dialog', { name: 'How to play' })).not.toContainText('Guess the word in six tries')
+  })
+
+  test('keeps Connections playable at 320 pixels wide', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
+      if (body.action !== 'connections-start') return route.continue()
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        sessionToken: 'narrow-connections-token',
+        connections: { state: { mode: 'daily', puzzleId: 'narrow-puzzle', date: '2026-08-08', words: ['STRAWBERRY', 'BLACKBERRY', 'RASPBERRY', 'BLUEBERRY', 'INSTRUMENT', 'TRIANGLE', 'RECTANGLE', 'LEOPARD', 'GUITAR', 'VIOLIN', 'CIRCLE', 'SQUARE', 'TIGER', 'PANTHER', 'CELLO', 'HARP'], solvedGroups: [], attempts: [], mistakeCount: 0, maxMistakes: 4, status: 'active' } },
+      }) })
+    })
+    await page.goto('/')
+    await page.getByRole('button', { name: 'All games' }).click()
+    await page.getByRole('button', { name: /Connections/ }).click()
+    await expect(page.locator('.connections-word')).toHaveCount(16)
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
   })
 
   test('restores completed Connections statistics and copies a spoiler-free result', async ({ page }) => {

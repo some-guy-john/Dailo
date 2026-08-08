@@ -55,6 +55,7 @@ function App() {
   const [connectionsNotice, setConnectionsNotice] = useState('')
   const [connectionsLoading, setConnectionsLoading] = useState(false)
   const [connectionsSubmitting, setConnectionsSubmitting] = useState(false)
+  const [connectionsReloadKey, setConnectionsReloadKey] = useState(0)
   const [connectionsArchiveDate, setConnectionsArchiveDate] = useState<string | null>(null)
   const [connectionsArchiveOpen, setConnectionsArchiveOpen] = useState(false)
   const [connectionsArchivePuzzles, setConnectionsArchivePuzzles] = useState<Awaited<ReturnType<typeof listConnectionsArchive>>>([])
@@ -78,6 +79,7 @@ function App() {
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const noticeTimerRef = useRef<number | undefined>(undefined)
+  const connectionsGridRef = useRef<HTMLDivElement>(null)
 
   const dailyResults = stats.dailyResults
   const currentStreak = calculateCurrentStreak(dailyResults, today)
@@ -269,6 +271,7 @@ function App() {
     if (screen !== 'connections' || connectionsArchiveOpen) return
     let cancelled = false
     setConnectionsLoading(true)
+    setConnectionsSession(null)
     setConnectionsSelected([])
     setConnectionsNotice('')
     const date = connectionsArchiveDate ?? today
@@ -287,7 +290,7 @@ function App() {
         setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections could not be loaded.')
       })
     return () => { cancelled = true }
-  }, [screen, today, user?.id, connectionsArchiveDate, connectionsArchiveOpen])
+  }, [screen, today, user?.id, connectionsArchiveDate, connectionsArchiveOpen, connectionsReloadKey])
 
   useEffect(() => {
     if (screen !== 'connections' || !connectionsArchiveOpen) return
@@ -301,7 +304,7 @@ function App() {
       setConnectionsLoading(false)
       setConnectionsNotice(error instanceof GameServiceError ? error.message : 'Connections Archive could not be loaded.')
     })
-  }, [screen, connectionsArchiveOpen, user?.id])
+  }, [screen, connectionsArchiveOpen, user?.id, connectionsReloadKey])
 
   useEffect(() => {
     if (!dialog) return
@@ -526,12 +529,18 @@ function App() {
         }).catch(() => {})
         if (response.session.mode === 'archive') void getConnectionsArchiveStats().then(setConnectionsArchiveStats).catch(() => {})
         window.setTimeout(() => setDialog('stats'), 900)
+      } else if (response.result.result === 'correct') {
+        window.setTimeout(() => connectionsGridRef.current?.querySelector<HTMLButtonElement>('button')?.focus(), 0)
       }
     } catch (error: unknown) {
       setConnectionsNotice(error instanceof GameServiceError ? error.message : 'The selection could not be checked.')
     } finally {
       setConnectionsSubmitting(false)
     }
+  }
+
+  function retryConnections() {
+    setConnectionsReloadKey((value) => value + 1)
   }
 
   function openAccount() {
@@ -740,7 +749,7 @@ function App() {
               <p>{connectionsArchiveOpen ? 'Past editions, separate from your Daily streak.' : 'Find four groups of four. You have four mistakes.'}</p>
               {!connectionsArchiveOpen && <button className="back-link" type="button" onClick={connectionsArchiveDate ? openConnections : openConnectionsArchive}>{connectionsArchiveDate ? 'Play today' : 'Browse archive'}</button>}
             </div>
-            {connectionsLoading && <p className="connections-status">Loading today’s puzzle…</p>}
+            {connectionsLoading && <p className="connections-status" role="status">Loading {connectionsArchiveOpen || connectionsArchiveDate ? 'archive' : 'today’s'} puzzle…</p>}
             {!connectionsLoading && connectionsArchiveOpen && !connectionsNotice && (
               <div className="archive-list">
                 <div className="archive-summary"><b>{connectionsArchiveStats.played}</b><span>played</span><b>{connectionsArchiveStats.wins}</b><span>won</span></div>
@@ -766,11 +775,11 @@ function App() {
                 </div>
                 {connectionsSession.status === 'active' ? (
                   <>
-                    <div className="connections-grid">
+                    <div className="connections-grid" ref={connectionsGridRef} role="group" aria-label={`Word selection, ${connectionsSelected.length} of 4 selected`}>
                       {shuffleConnectionsWords(connectionsSession.words, connectionsSession.puzzleId)
                         .filter((word) => !connectionsSession.solvedGroups.some((group) => group.words.includes(word)))
                         .map((word) => (
-                          <button className="connections-word" data-selected={connectionsSelected.includes(word)} type="button" key={word} onClick={() => toggleConnectionsWord(word)}>
+                          <button className="connections-word" data-selected={connectionsSelected.includes(word)} aria-pressed={connectionsSelected.includes(word)} type="button" key={word} onClick={() => toggleConnectionsWord(word)}>
                             {word}
                           </button>
                         ))}
@@ -790,7 +799,7 @@ function App() {
                 )}
               </>
             )}
-            {!connectionsLoading && !connectionsSession && connectionsNotice && <div className="error-bar" role="alert">{connectionsNotice}</div>}
+            {!connectionsLoading && !connectionsSession && connectionsNotice && <div className="error-bar" role="alert"><span>{connectionsNotice}</span><button type="button" onClick={retryConnections}>Retry</button></div>}
           </div>
         </section>
       ) : screen === 'archive' ? (
@@ -1108,7 +1117,16 @@ function App() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
             <h2 id="help-title">How to play</h2>
-            <p style={{ marginTop: 0 }}>
+            {screen === 'connections' ? <>
+              <p style={{ marginTop: 0 }}>Find four groups of four related words.</p>
+              <ul className="help-list">
+                <li>Select exactly four words, then submit.</li>
+                <li>A correct group leaves the board and reveals its category.</li>
+                <li>“One away” means three selected words belong together.</li>
+                <li>Four incorrect selections end the puzzle.</li>
+              </ul>
+              <p className="fine">Group colours represent difficulty from yellow through purple. Daily and Archive results are tracked separately.</p>
+            </> : <><p style={{ marginTop: 0 }}>
               Guess the word in six tries. Each guess must be a real five-letter word. The colours show how close you were.
             </p>
             <ul className="examples">
@@ -1135,6 +1153,7 @@ function App() {
             <p className="fine">
               A new puzzle for everyone at midnight. Unlimited never runs out and never touches your streak.
             </p>
+            </>}
           </div>
         </div>
       )}
