@@ -1129,7 +1129,7 @@ function App() {
             </div>
           )}
 
-          <div className="keyboard" aria-label="On-screen keyboard">
+          <div className="keyboard" role="group" aria-label="On-screen keyboard">
             {KEYBOARD_ROWS.map((row, rowIndex) => (
               <div className="keyboard-row" data-indent={rowIndex === 1} key={rowIndex}>
                 {rowIndex === 2 && (
