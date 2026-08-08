@@ -33,6 +33,15 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        run: npx playwright test --workers=1
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
       - name: Build
         run: npm run build
         env:

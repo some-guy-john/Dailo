@@ -143,6 +143,28 @@ test.describe('protected Wordo play', () => {
     expect(unlimitedStarts).toBe(2)
   })
 
+  test('shows Unlimited statistics separately from Daily', async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem('dailies:stats:v1', JSON.stringify({
+      dailyResults: { '2026-08-08': { date: '2026-08-08', won: false, guesses: 6 } },
+      unlimitedResults: [{ puzzleId: 'practice-1', won: true, guesses: 2 }, { puzzleId: 'practice-2', won: true, guesses: 3 }],
+      archiveResults: [], recentUnlimitedPuzzleIds: [], connectionsDailyResults: {},
+    })))
+    await page.route('**/functions/v1/wordle', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string; mode?: string }
+      if (body.action === 'start') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        sessionToken: 'stats-token', state: { mode: body.mode, puzzleId: 'stats-puzzle', date: body.mode === 'daily' ? '2026-08-08' : null, status: 'active', attemptCount: 0, attempts: [], answer: null },
+      }) })
+      else await route.continue()
+    })
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Unlimited' }).click()
+    await page.getByRole('button', { name: 'Statistics' }).click()
+    const stats = page.getByRole('dialog', { name: 'Statistics' })
+    await expect(stats.getByText('Played').locator('..').getByText('2')).toBeVisible()
+    await expect(stats.getByText('Win %').locator('..').getByText('100')).toBeVisible()
+    await expect(stats).toContainText('No streak')
+  })
+
   test('opens the statistics dialog after solving', async ({ page }) => {
     await page.route('**/functions/v1/wordle', async (route) => {
       const body = JSON.parse(route.request().postData() ?? '{}') as { action?: string }
@@ -184,12 +206,15 @@ test.describe('protected Wordo play', () => {
 
   test('explains the rules without adding page clutter', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('button', { name: 'How to play' }).click()
+    const opener = page.getByRole('button', { name: 'How to play' })
+    await opener.click()
 
     const dialog = page.getByRole('dialog', { name: 'How to play' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText('Guess the word in six tries.', { exact: false })).toBeVisible()
     await expect(dialog.getByText('midnight', { exact: false })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Close how to play' }).click()
+    await expect(opener).toBeFocused()
   })
 
   test('lists the games behind the header icon', async ({ page }) => {

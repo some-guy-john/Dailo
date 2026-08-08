@@ -82,6 +82,7 @@ function App() {
   const [shareLabel, setShareLabel] = useState('Share')
   const startRequestRef = useRef<{ key: string; promise: Promise<GameSession> } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
+  const dialogOpenerRef = useRef<HTMLElement | null>(null)
   const noticeTimerRef = useRef<number | undefined>(undefined)
   const connectionsGridRef = useRef<HTMLDivElement>(null)
 
@@ -92,7 +93,12 @@ function App() {
   const dailyWins = Object.values(dailyResults).filter((result) => result.won).length
   const winPercentage = dailyPlayed === 0 ? 0 : Math.round((dailyWins / dailyPlayed) * 100)
   const distribution = countDistribution(stats)
-  const bestBucket = Math.max(1, ...distribution)
+  const unlimitedPlayed = stats.unlimitedResults.length
+  const unlimitedWins = stats.unlimitedResults.filter((result) => result.won).length
+  const unlimitedWinPercentage = unlimitedPlayed === 0 ? 0 : Math.round((unlimitedWins / unlimitedPlayed) * 100)
+  const unlimitedDistribution = countGuessDistribution(stats.unlimitedResults)
+  const displayedDistribution = mode === 'unlimited' ? unlimitedDistribution : distribution
+  const displayedBestBucket = Math.max(1, ...displayedDistribution)
   const isFinished = session.status !== 'active'
   const isBusy = isLoading || isSubmitting || !session.sessionToken
   const hasLoadError = !isLoading && !session.sessionToken
@@ -321,8 +327,13 @@ function App() {
   }, [screen, connectionsArchiveOpen, user?.id, connectionsReloadKey])
 
   useEffect(() => {
-    if (!dialog) return
-    dialogRef.current?.focus()
+    if (dialog) {
+      if (document.activeElement instanceof HTMLElement && !document.activeElement.closest('.modal')) dialogOpenerRef.current = document.activeElement
+      dialogRef.current?.focus()
+      return
+    }
+    dialogOpenerRef.current?.focus()
+    dialogOpenerRef.current = null
   }, [dialog])
 
   useEffect(() => {
@@ -1090,10 +1101,10 @@ function App() {
                 <p className="fine" style={{ marginTop: 14 }}>{showingConnectionsArchiveStats ? 'Archive results are synced separately and never change your Daily streak.' : user ? 'Verified signed-in results sync across devices. Older device results remain local.' : 'Saved in this browser only. Sign in to sync future verified results.'}</p>
               </>
             ) : <><div className="stat-row">
-              <div className="stat"><b>{mode === 'archive' ? displayedArchivePlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>
-              <div className="stat"><b>{mode === 'archive' ? (displayedArchivePlayed === 0 ? 0 : Math.round((displayedArchiveWins / displayedArchivePlayed) * 100)) : winPercentage}</b><span>Win %</span></div>
-              <div className="stat"><b>{mode === 'archive' ? '—' : currentStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Current streak'}</span></div>
-              <div className="stat"><b>{mode === 'archive' ? '—' : maximumStreak}</b><span>{mode === 'archive' ? 'No streak' : 'Max streak'}</span></div>
+              <div className="stat"><b>{mode === 'archive' ? displayedArchivePlayed : mode === 'unlimited' ? unlimitedPlayed : dailyPlayed}</b><span>{mode === 'archive' ? 'Archive played' : 'Played'}</span></div>
+              <div className="stat"><b>{mode === 'archive' ? (displayedArchivePlayed === 0 ? 0 : Math.round((displayedArchiveWins / displayedArchivePlayed) * 100)) : mode === 'unlimited' ? unlimitedWinPercentage : winPercentage}</b><span>Win %</span></div>
+              <div className="stat"><b>{mode === 'archive' || mode === 'unlimited' ? '—' : currentStreak}</b><span>{mode === 'archive' || mode === 'unlimited' ? 'No streak' : 'Current streak'}</span></div>
+              <div className="stat"><b>{mode === 'archive' || mode === 'unlimited' ? '—' : maximumStreak}</b><span>{mode === 'archive' || mode === 'unlimited' ? 'No streak' : 'Max streak'}</span></div>
             </div>
 
             {mode === 'archive' ? (
@@ -1102,13 +1113,13 @@ function App() {
               <>
                 <h2>Guess distribution</h2>
                 <div className="dist">
-                  {distribution.map((count, index) => (
+                  {displayedDistribution.map((count, index) => (
                     <div className="dist-row" key={index}>
                       <span>{index + 1}</span>
                       <div
                         className="dist-bar"
-                        data-best={count > 0 && count === bestBucket}
-                        style={{ width: `${Math.max(8, Math.round((count / bestBucket) * 100))}%` }}
+                        data-best={count > 0 && count === displayedBestBucket}
+                        style={{ width: `${Math.max(8, Math.round((count / displayedBestBucket) * 100))}%` }}
                       >
                         {count}
                       </div>
@@ -1274,8 +1285,12 @@ function App() {
 }
 
 function countDistribution(stats: Stats): number[] {
+  return countGuessDistribution(Object.values(stats.dailyResults))
+}
+
+function countGuessDistribution(results: Array<{ won: boolean; guesses: number }>): number[] {
   const buckets = Array.from({ length: MAX_GUESSES }, () => 0)
-  Object.values(stats.dailyResults).forEach((result) => {
+  results.forEach((result) => {
     if (result.won && result.guesses >= 1 && result.guesses <= MAX_GUESSES) {
       buckets[result.guesses - 1] += 1
     }

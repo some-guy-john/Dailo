@@ -113,6 +113,8 @@ function endpoint(): string {
 
 async function callBackend(body: Record<string, unknown>): Promise<BackendResponse> {
   let response: Response
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15_000)
   const { data: { session: authSession } } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
   const accessToken = authSession?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY
   try {
@@ -124,12 +126,20 @@ async function callBackend(body: Record<string, unknown>): Promise<BackendRespon
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
   } catch {
     throw new GameServiceError('temporary_server_failure', 'The service could not be reached.')
+  } finally {
+    window.clearTimeout(timeout)
   }
 
-  const payload = await response.json() as BackendResponse
+  let payload: BackendResponse
+  try {
+    payload = await response.json() as BackendResponse
+  } catch {
+    throw new GameServiceError('temporary_server_failure', 'The service returned an invalid response.')
+  }
   if (!response.ok || payload.error) {
     throw new GameServiceError(payload.error?.code ?? 'temporary_server_failure', payload.error?.message ?? 'The service is temporarily unavailable.')
   }
@@ -249,24 +259,32 @@ export async function submitGuess(session: GameSession, rawGuess: string): Promi
 
   if (isProtectedBackendConfigured) {
     if (!session.sessionToken) throw new GameServiceError('invalid_session', 'This game session is not valid.')
+    const pendingKey = `dailies:pending-guess:${session.sessionToken}:${session.attempts.length + 1}:${guess}`
+    let idempotencyKey = window.sessionStorage.getItem(pendingKey)
+    if (!idempotencyKey) {
+      idempotencyKey = crypto.randomUUID()
+      window.sessionStorage.setItem(pendingKey, idempotencyKey)
+    }
     const response = await callBackend({
       action: 'guess',
       sessionToken: session.sessionToken,
       guess,
       expectedAttempt: session.attempts.length + 1,
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey,
     })
     if (!response.result) throw new GameServiceError('temporary_server_failure', 'The service returned an incomplete guess.')
     const nextAttempts = response.result.attemptCount > session.attempts.length
       ? [...session.attempts, response.result.attempt]
       : session.attempts
-    return {
+    const nextSession = {
       ...session,
       attempts: nextAttempts,
       status: response.result.status,
       answer: response.result.answer ?? session.answer,
       completedAt: response.result.status === 'active' ? undefined : new Date().toISOString(),
     }
+    window.sessionStorage.removeItem(pendingKey)
+    return nextSession
   }
 
   throw new GameServiceError('configuration_missing', 'Connect Supabase before submitting a protected guess.')
